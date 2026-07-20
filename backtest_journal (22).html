@@ -1,0 +1,2612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backtest Journal</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #0e0f11;
+    --bg2: #16181c;
+    --bg3: #1e2128;
+    --bg4: #252830;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e8eaf0;
+    --text2: #9da3b4;
+    --text3: #5a6070;
+    --green: #2dd4a0;
+    --green-dim: rgba(45,212,160,0.12);
+    --red: #f0616a;
+    --red-dim: rgba(240,97,106,0.12);
+    --blue: #5b9cf6;
+    --blue-dim: rgba(91,156,246,0.12);
+    --amber: #f4b942;
+    --amber-dim: rgba(244,185,66,0.12);
+    --purple: #a78bfa;
+    --purple-dim: rgba(167,139,250,0.12);
+    --accent: #5b9cf6;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --font: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  #app-shell {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+  }
+
+  /* LOGIN */
+  .login-screen {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+  }
+  .login-card {
+    width: 100%;
+    max-width: 340px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px 28px;
+  }
+  .login-logo {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+  .login-sub {
+    font-size: 12.5px;
+    color: var(--text3);
+    margin-bottom: 22px;
+  }
+  .login-error {
+    font-size: 12px;
+    color: var(--red);
+    margin-top: 12px;
+    min-height: 14px;
+  }
+
+  /* SIDEBAR */
+  #sidebar {
+    width: 220px;
+    min-width: 220px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    overflow-y: auto;
+  }
+
+  .logo {
+    padding: 20px 18px 16px;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .logo span { color: var(--blue); }
+
+  .global-filter-container {
+    padding: 0 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .global-filter-select {
+    width: 100%;
+    background: var(--bg4);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 600;
+    outline: none;
+    cursor: pointer;
+  }
+  .global-filter-select:focus {
+    border-color: var(--blue);
+  }
+
+  .nav-section { padding: 16px 10px 0; }
+  .nav-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--text3); padding: 0 8px 8px;
+  }
+
+  .nav-btn {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: var(--radius-sm); cursor: pointer; color: var(--text2);
+    font-size: 13.5px; font-weight: 500; border: none; background: transparent;
+    width: 100%; text-align: left; transition: all 0.15s;
+  }
+  .nav-btn:hover { background: var(--bg3); color: var(--text); }
+  .nav-btn.active { background: var(--blue-dim); color: var(--blue); }
+  .nav-btn .icon { font-size: 16px; width: 20px; text-align: center; }
+
+  .sidebar-bottom { margin-top: auto; padding: 12px 10px; border-top: 1px solid var(--border); }
+
+  #main { flex: 1; overflow-y: auto; height: 100vh; }
+
+  .topbar {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 14px 28px; display: flex; align-items: center;
+    justify-content: space-between; position: sticky; top: 0; z-index: 10;
+  }
+
+  .topbar-title { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+  .topbar-sub { font-size: 12px; color: var(--text3); margin-top: 2px; }
+
+  .page { display: none; padding: 28px; }
+  .page.active { display: block; }
+
+  .metrics-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+  }
+  .metric-card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px;
+  }
+  .metric-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text3); margin-bottom: 6px;
+  }
+  .metric-value { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
+  .metric-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+  
+  .green { color: var(--green); } .red { color: var(--red); }
+  .blue { color: var(--blue); } .amber { color: var(--amber); } .purple { color: var(--purple); }
+
+  .card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 20px;
+  }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+
+  .trade-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .trade-table th {
+    text-align: left; color: var(--text3); font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  }
+  .trade-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .trade-table tr:last-child td { border-bottom: none; }
+  .trade-table tr:hover td { background: var(--bg3); }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: var(--green-dim); color: var(--green); }
+  .badge-red { background: var(--red-dim); color: var(--red); }
+  .badge-blue { background: var(--blue-dim); color: var(--blue); }
+  .badge-amber { background: var(--amber-dim); color: var(--amber); }
+  .badge-purple { background: var(--purple-dim); color: var(--purple); }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; position: relative; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-label { font-size: 12px; font-weight: 600; color: var(--text2); }
+  .form-input, .form-select, .form-textarea {
+    background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: var(--radius-sm); color: var(--text); font-size: 13.5px;
+    font-family: var(--font); padding: 9px 12px; transition: border-color 0.15s; outline: none; width: 100%;
+  }
+  .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--blue); }
+  .form-input:disabled { opacity: 0.6; cursor: not-allowed; }
+  .form-select option { background: var(--bg3); }
+  .form-textarea { resize: vertical; min-height: 72px; }
+
+  /* Custom Autocomplete Dropdown */
+  .ac-dropdown {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    background: var(--bg4); border: 1px solid var(--blue);
+    border-radius: var(--radius-sm); max-height: 250px; overflow-y: auto;
+    z-index: 100; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  .ac-dropdown.open { display: block; }
+  .ac-item {
+    padding: 10px 14px; font-size: 13px; cursor: pointer; color: var(--text);
+    border-bottom: 1px solid var(--border); line-height: 1.5; white-space: normal;
+  }
+  .ac-item:last-child { border-bottom: none; }
+  .ac-item:hover { background: var(--blue-dim); color: var(--blue); }
+
+  .rating-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rating-btn {
+    padding: 6px 14px; border-radius: 100px; border: 1px solid var(--border2);
+    background: transparent; color: var(--text2); font-size: 12px;
+    font-weight: 600; cursor: pointer; transition: all 0.15s;
+  }
+  .rating-btn:hover { border-color: var(--blue); color: var(--blue); }
+  .rating-btn.selected { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); }
+
+  .btn {
+    padding: 9px 20px; border-radius: var(--radius-sm); font-size: 13.5px;
+    font-weight: 600; cursor: pointer; border: none; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-primary:hover { background: #4a8be8; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--text2); }
+  .btn-ghost:hover { background: var(--bg3); color: var(--text); }
+  .btn-green { background: var(--green); color: #05291f; }
+  .btn-green:hover { opacity: 0.85; }
+  .btn-danger { background: var(--red-dim); color: var(--red); border: 1px solid rgba(240,97,106,0.25); }
+  .btn-danger:hover { background: rgba(240,97,106,0.2); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+  .ai-chat { display: flex; flex-direction: column; gap: 14px; max-height: 500px; overflow-y: auto; padding-right: 4px; margin-bottom: 16px; }
+  .ai-msg { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; font-size: 13.5px; line-height: 1.7; white-space: pre-wrap; }
+  .ai-msg.user { background: var(--blue-dim); border-color: rgba(91,156,246,0.2); margin-left: 40px; }
+  .ai-msg.assistant { margin-right: 40px; }
+  .ai-msg.loading { color: var(--text3); font-style: italic; }
+  .ai-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+  .ai-label.user-label { color: var(--blue); }
+  .ai-label.ai-label-text { color: var(--purple); }
+  .ai-input-row { display: flex; gap: 10px; align-items: flex-end; }
+  .ai-input-row .form-textarea { flex: 1; min-height: 52px; }
+
+  .breakdown-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .breakdown-label { width: 100px; font-size: 12px; color: var(--text2); flex-shrink: 0; }
+  .breakdown-bar-bg { flex: 1; height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+  .breakdown-bar { height: 100%; border-radius: 3px; transition: width 0.4s; }
+  .breakdown-stat { width: 80px; text-align: right; font-size: 12px; font-weight: 600; color: var(--text); flex-shrink: 0; }
+
+  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-header { text-align: center; font-size: 10px; font-weight: 600; color: var(--text3); padding: 4px 0 8px; text-transform: uppercase; }
+  .cal-day {
+    aspect-ratio: 1; border-radius: var(--radius-sm); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; font-size: 10px; border: 1px solid transparent; cursor: default; position: relative;
+  }
+  .cal-day.has-trades { border-color: var(--border); cursor: pointer; }
+  .cal-day.win { background: var(--green-dim); border-color: rgba(45,212,160,0.25); }
+  .cal-day.loss { background: var(--red-dim); border-color: rgba(240,97,106,0.25); }
+  .cal-day.breakeven { background: var(--bg3); border-color: var(--border); }
+  .cal-day-num { font-size: 10px; color: var(--text3); }
+  .cal-day-pnl { font-size: 10px; font-weight: 700; margin-top: 1px; }
+
+  .screenshot-preview { width: 100%; max-height: 120px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-top: 6px; cursor: pointer; transition: opacity 0.2s; }
+  .screenshot-preview:hover { opacity: 0.8; }
+
+  .lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); z-index: 99999; display: none; align-items: center; justify-content: center; }
+  .lightbox-overlay.open { display: flex; }
+  .lightbox-img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); object-fit: contain; }
+  .lightbox-close { position: absolute; top: 20px; right: 30px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 100px; font-weight: 600; cursor: pointer; transition: 0.15s; }
+  .lightbox-close:hover { background: var(--bg4); }
+
+  .report-box { background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius); padding: 16px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; color: var(--text2); white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
+  
+  .pill-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill { padding: 4px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--bg3); border: 1px solid var(--border); color: var(--text2); cursor: pointer; transition: all 0.15s; }
+  .pill:hover, .pill.active { background: var(--blue-dim); border-color: rgba(91,156,246,0.35); color: var(--blue); }
+
+  .empty-state { text-align: center; padding: 48px 24px; color: var(--text3); }
+  .empty-state .empty-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.4; }
+  .empty-state p { font-size: 14px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  
+  #toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg4); border: 1px solid var(--border2); border-radius: var(--radius); padding: 12px 18px; font-size: 13px; font-weight: 500; display: none; z-index: 100000; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 10px; }
+
+  .upload-zone { border: 1px dashed var(--border2); border-radius: var(--radius-sm); padding: 16px; text-align: center; cursor: pointer; transition: all 0.15s; color: var(--text3); font-size: 12px; }
+  .upload-zone:hover { border-color: var(--blue); color: var(--blue); }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: none; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--bg2); border: 1px solid var(--border2); border-radius: 14px; padding: 28px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+  .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
+
+  .tag-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--bg4); color: var(--text2); margin-right: 4px; margin-bottom: 4px; }
+  .streak-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 3px; background: var(--bg3); outline: none; cursor: pointer; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--blue); cursor: pointer; border: 3px solid var(--bg2); box-shadow: 0 0 0 1px var(--border2); }
+  input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--blue); cursor: pointer; border: 3px solid var(--bg2); box-shadow: 0 0 0 1px var(--border2); }
+
+  @media (max-width: 768px) {
+    #sidebar { display: none; }
+    .two-col, .three-col { grid-template-columns: 1fr; }
+    .form-grid { grid-template-columns: 1fr; }
+    .page { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="login-screen" class="login-screen">
+  <div class="login-card">
+    <div class="login-logo">📈 <span style="color:var(--blue)">BackTest</span>Journal</div>
+    <div class="login-sub">Sign in to access your trading journal</div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Email</label>
+      <input type="email" class="form-input" id="login-email" placeholder="you@example.com">
+    </div>
+    <div class="form-group" style="margin-bottom:18px">
+      <label class="form-label">Password</label>
+      <input type="password" class="form-input" id="login-password" placeholder="••••••••" onkeydown="if(event.key==='Enter') doLogin()">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doLogin()">Sign in</button>
+    <div id="login-error" class="login-error"></div>
+  </div>
+</div>
+
+<div id="app-shell" style="display:none">
+<nav id="sidebar">
+  <div class="logo">📈 <span>BackTest</span>Journal</div>
+  <div class="global-filter-container">
+    <select class="global-filter-select" id="global-session-filter" onchange="changeGlobalSession()">
+      <option value="">All Backtest Sessions</option>
+    </select>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Overview</div>
+    <button class="nav-btn active" onclick="nav('dashboard')">
+      <span class="icon">⊞</span> Dashboard
+    </button>
+    <button class="nav-btn" onclick="nav('stats')">
+      <span class="icon">◎</span> Statistics
+    </button>
+    <button class="nav-btn" onclick="nav('calendar')">
+      <span class="icon">▦</span> Calendar
+    </button>
+  </div>
+  <div class="nav-section" style="margin-top:12px">
+    <div class="nav-label">Trades</div>
+    <button class="nav-btn" onclick="nav('log')">
+      <span class="icon">＋</span> Log Trade
+    </button>
+    <button class="nav-btn" onclick="nav('trades')">
+      <span class="icon">≡</span> Trade List
+    </button>
+  </div>
+  <div class="nav-section" style="margin-top:12px">
+    <div class="nav-label">Analysis</div>
+    <button class="nav-btn" onclick="nav('breakdown')">
+      <span class="icon">◈</span> Breakdowns
+    </button>
+    <button class="nav-btn" onclick="nav('ai')">
+      <span class="icon">✦</span> AI Coach
+    </button>
+    <button class="nav-btn" onclick="nav('export')">
+      <span class="icon">↗</span> Export Report
+    </button>
+  </div>
+  <div class="nav-section" style="margin-top:12px">
+    <div class="nav-label">Data</div>
+    <button class="nav-btn" onclick="nav('settings')">
+      <span class="icon">⚙</span> Settings
+    </button>
+  </div>
+  <div class="sidebar-bottom">
+    <div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:8px;">
+      <span id="trade-count-sidebar">0</span> trades visible
+    </div>
+    <button class="btn btn-ghost" style="width:100%;justify-content:center;font-size:12px;padding:6px" onclick="doLogout()">Sign out</button>
+  </div>
+</nav>
+
+<div id="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="page-title">Dashboard</div>
+      <div class="topbar-sub" id="page-sub">Your backtest performance at a glance</div>
+    </div>
+    <button class="btn btn-primary" onclick="nav('log')" style="gap:6px">
+      <span>＋</span> Log Trade
+    </button>
+  </div>
+
+  <div class="page active" id="page-dashboard">
+    <div class="metrics-grid" id="dash-metrics"></div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Equity Curve</div></div>
+        <div style="position:relative;height:200px">
+          <canvas id="equityChart" role="img" aria-label="Equity curve over time"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Win / Loss Distribution</div></div>
+        <div style="position:relative;height:200px">
+          <canvas id="winLossChart" role="img" aria-label="Win loss distribution"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Trade Time Performance</div></div>
+        <div style="position:relative;height:180px">
+          <canvas id="tradeTimeChart" role="img" aria-label="PnL by time of day"></canvas>
+        </div>
+        <div class="empty-state" id="tradeTimeChart-empty" style="display:none;padding:16px"><p>Log entry times to see P&amp;L by time of day.</p></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">P&amp;L by Setup Tag</div></div>
+        <div style="position:relative;height:180px">
+          <canvas id="setupChart" role="img" aria-label="PnL by setup tag"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Trade Duration Performance</div></div>
+      <div style="position:relative;height:200px">
+        <canvas id="tradeDurationChart" role="img" aria-label="PnL by trade duration"></canvas>
+      </div>
+      <div class="empty-state" id="tradeDurationChart-empty" style="display:none;padding:16px"><p>Log entry and exit times to see P&amp;L by trade duration.</p></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Recent Trades</div></div>
+      <div id="dash-recent"></div>
+    </div>
+  </div>
+
+  <div class="page" id="page-stats">
+    <div class="metrics-grid" id="stats-metrics"></div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Daily P&amp;L Bar Chart</div></div>
+        <div style="position:relative;height:220px">
+          <canvas id="dailyPnlChart" role="img" aria-label="Daily PnL bar chart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">R-Multiple Distribution</div></div>
+        <div style="position:relative;height:220px">
+          <canvas id="rDistChart" role="img" aria-label="R multiple distribution"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Win Rate by Day of Week</div></div>
+        <div id="dow-breakdown"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Streak Tracker</div></div>
+        <div id="streak-tracker"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">R-Multiple Optimizer</div></div>
+      <div id="r-optimizer-content"></div>
+    </div>
+  </div>
+
+  <div class="page" id="page-calendar">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title" id="cal-month-label">Month</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" style="padding:6px 12px" onclick="calPrev()">‹</button>
+          <button class="btn btn-ghost" style="padding:6px 12px" onclick="calNext()">›</button>
+        </div>
+      </div>
+      <div class="calendar-grid" id="cal-headers"></div>
+      <div class="calendar-grid" id="cal-days" style="margin-top:4px"></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Weekly Summary</div></div>
+        <div id="weekly-summary"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Best / Worst Days</div></div>
+        <div id="best-worst"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="page-log">
+    <div class="card" style="max-width:740px">
+      <div class="card-header" style="margin-bottom:20px">
+        <div class="card-title" id="form-mode-label">New Trade</div>
+        <button class="btn btn-ghost" onclick="resetForm()" style="padding:6px 12px;font-size:12px">Clear</button>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group full" style="margin-bottom:8px">
+          <label class="form-label" style="color:var(--blue)">Backtesting Session / Group</label>
+          <input type="text" class="form-input custom-ac" id="f-bt-session" placeholder="e.g. NQ Reversal Strategy v1" onfocus="updateList('btSession', this)" oninput="updateList('btSession', this)" autocomplete="off" style="border-color:var(--blue-dim)">
+          <div class="ac-dropdown" id="ac-btSession"></div>
+        </div>
+      
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input type="date" class="form-input" id="f-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Symbol</label>
+          <select class="form-select" id="f-symbol">
+            <option value="MES">MES — Micro E-mini S&P 500</option>
+            <option value="MNQ">MNQ — Micro E-mini Nasdaq</option>
+            <option value="MYM">MYM — Micro E-mini Dow</option>
+            <option value="MGC">MGC — Micro Gold</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Direction</label>
+          <div style="display:flex;gap:8px">
+            <button class="rating-btn" type="button" id="dir-long" onclick="setDir('Long')">⬆ Long</button>
+            <button class="rating-btn" type="button" id="dir-short" onclick="setDir('Short')">⬇ Short</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">HTF Bias</label>
+          <select class="form-select" id="f-bias">
+            <option value="Bullish">Bullish</option>
+            <option value="Bearish">Bearish</option>
+            <option value="Neutral">Neutral</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Entry Time (Smart Input)</label>
+          <input type="text" class="form-input" id="f-entry-time" placeholder="e.g. 930 or 1445" onblur="formatSmartTime(this); updateCalc()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Exit Time (Smart Input)</label>
+          <input type="text" class="form-input" id="f-exit-time" placeholder="e.g. 1015 or 1500" onblur="formatSmartTime(this)">
+        </div>
+        
+        <div class="form-group full">
+          <label class="form-label">Calculated Session</label>
+          <input type="text" class="form-input" id="f-session-display" disabled placeholder="Will calculate automatically from Entry Time">
+        </div>
+        
+        <div class="form-group full">
+          <label class="form-label">Setup Tags (comma separated)</label>
+          <input type="text" class="form-input custom-ac" id="f-setup" placeholder="e.g. Breakout, Pullback, FVG..." onfocus="updateList('setup', this)" oninput="updateList('setup', this)" autocomplete="off">
+          <div class="ac-dropdown" id="ac-setup"></div>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Entry Price</label>
+          <input type="number" step="0.25" class="form-input" id="f-entry" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Exit Price</label>
+          <input type="number" step="0.25" class="form-input" id="f-exit" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Initial Target (Points)</label>
+          <input type="number" step="0.25" class="form-input" id="f-tp-points" placeholder="e.g. 10">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Stop Loss (Points)</label>
+          <input type="number" step="0.25" class="form-input" id="f-sl-points" placeholder="e.g. 5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contracts</label>
+          <input type="number" class="form-input" id="f-contracts" value="1" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Max Favorable Excursion (Points) <span style="color:var(--text3);font-weight:400">— optional</span></label>
+          <input type="number" step="0.25" class="form-input" id="f-mfe" placeholder="e.g. 15.5" oninput="updateCalc()">
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label">Calculated Metrics</label>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(100px, 1fr));gap:12px">
+            <div class="metric-card" style="padding:10px 14px">
+              <div class="metric-label">Dollar P&L</div>
+              <div class="metric-value" id="calc-pnl" style="font-size:18px">—</div>
+            </div>
+            <div class="metric-card" style="padding:10px 14px">
+              <div class="metric-label">Risk ($)</div>
+              <div class="metric-value" id="calc-risk" style="font-size:18px">—</div>
+            </div>
+            <div class="metric-card" style="padding:10px 14px">
+              <div class="metric-label">Targeted R</div>
+              <div class="metric-value" id="calc-target-r" style="font-size:18px;color:var(--blue)">—</div>
+            </div>
+            <div class="metric-card" style="padding:10px 14px">
+              <div class="metric-label">Realized R</div>
+              <div class="metric-value" id="calc-r" style="font-size:18px">—</div>
+            </div>
+            <div class="metric-card" style="padding:10px 14px">
+              <div class="metric-label">Max R</div>
+              <div class="metric-value" id="calc-max-r" style="font-size:18px">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group full" style="margin-top:20px; border-top:1px solid var(--border); padding-top:20px;">
+          <div class="card-title" style="margin-bottom:14px; color:var(--purple); font-size:14px;">Psychology & Context (Optional)</div>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label">Directional Thesis Clarity</label>
+          <input type="text" class="form-input custom-ac" id="f-thesis" placeholder="e.g. Primary Thesis, Improvised..." onfocus="updateList('thesis', this)" oninput="updateList('thesis', this)" autocomplete="off">
+          <div class="ac-dropdown" id="ac-thesis"></div>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label">Internal State at Entry</label>
+          <input type="text" class="form-input custom-ac" id="f-internal" placeholder="e.g. Instinct, Reasoned..." onfocus="updateList('internal', this)" oninput="updateList('internal', this)" autocomplete="off">
+          <div class="ac-dropdown" id="ac-internal"></div>
+        </div>
+        
+        <div class="form-group full">
+          <label class="form-label">Volatility Regime</label>
+          <input type="text" class="form-input custom-ac" id="f-volatility" placeholder="e.g. Expanding, Normal..." onfocus="updateList('volatility', this)" oninput="updateList('volatility', this)" autocomplete="off">
+          <div class="ac-dropdown" id="ac-volatility"></div>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label">Proximity to Key Level</label>
+          <input type="text" class="form-input custom-ac" id="f-proximity" placeholder="e.g. At Level, Near Level..." onfocus="updateList('proximity', this)" oninput="updateList('proximity', this)" autocomplete="off">
+          <div class="ac-dropdown" id="ac-proximity"></div>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label">Session Quartile</label>
+          <input type="text" class="form-input custom-ac" id="f-quartile" placeholder="e.g. Q1, Q2..." onfocus="updateList('quartile', this)" oninput="updateList('quartile', this)" autocomplete="off">
+          <div class="ac-dropdown" id="ac-quartile"></div>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label">Failure Mode Flag</label>
+          <input type="text" class="form-input custom-ac" id="f-failure" placeholder="e.g. Chased, Overtraded..." onfocus="updateList('failure', this)" oninput="updateList('failure', this)" autocomplete="off">
+          <div class="ac-dropdown" id="ac-failure"></div>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label">Outcome</label>
+          <input type="text" class="form-input custom-ac" id="f-outcome" placeholder="e.g. Exited on plan..." onfocus="updateList('outcome', this)" oninput="updateList('outcome', this)" autocomplete="off">
+          <div class="ac-dropdown" id="ac-outcome"></div>
+        </div>
+
+        <div class="form-group full" style="margin-top:10px;">
+          <label class="form-label">Conviction Level</label>
+          <div class="rating-group" id="conviction-rating">
+            <button class="rating-btn" type="button" onclick="setConviction(1)">1</button>
+            <button class="rating-btn" type="button" onclick="setConviction(2)">2</button>
+            <button class="rating-btn" type="button" onclick="setConviction(3)">3</button>
+            <button class="rating-btn" type="button" onclick="setConviction(4)">4</button>
+            <button class="rating-btn" type="button" onclick="setConviction(5)">5</button>
+          </div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:8px;">
+            <strong style="color:var(--text2)">5</strong> — Absolute clarity. Would size up if rules allowed.<br>
+            <strong style="color:var(--text2)">4</strong> — High confidence, minor uncertainty.<br>
+            <strong style="color:var(--text2)">3</strong> — Moderate. Could see both sides.<br>
+            <strong style="color:var(--text2)">2</strong> — Low. Took it anyway for some reason.<br>
+            <strong style="color:var(--text2)">1</strong> — Almost didn't take it. Shouldn't have.
+          </div>
+        </div>
+
+        <div class="form-group full" style="margin-top:10px;margin-bottom:14px;">
+          <label class="form-label">Process Quality Rating</label>
+          <div class="rating-group" id="process-rating">
+            <button class="rating-btn" type="button" onclick="setProcess('A')">A</button>
+            <button class="rating-btn" type="button" onclick="setProcess('B')">B</button>
+            <button class="rating-btn" type="button" onclick="setProcess('C')">C</button>
+            <button class="rating-btn" type="button" onclick="setProcess('D')">D</button>
+          </div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.6;margin-top:8px;">
+            <strong style="color:var(--text2)">A</strong> — Paused before entry, articulated stop/target/inval, executed plan, exited on plan.<br>
+            <strong style="color:var(--text2)">B</strong> — Mostly followed process, minor deviation (slightly late exit, adjusted target once).<br>
+            <strong style="color:var(--text2)">C</strong> — Partial process. Entered with some clarity but deviated meaningfully on management.<br>
+            <strong style="color:var(--text2)">D</strong> — Process mostly absent. Impulsive entry, reactive management, or exit driven by emotion.
+          </div>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label">Notes</label>
+          <textarea class="form-textarea" id="f-notes" placeholder="What did you see? What did you do well or poorly? What would you do differently?"></textarea>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label" style="margin-bottom:0">Chart Image</label>
+          <input type="url" class="form-input" id="f-tv-link" placeholder="Paste direct image link (TradingView, Gyazo, etc.)" style="margin-bottom:8px">
+          <div class="upload-zone" id="upload-zone-ui" onclick="document.getElementById('f-screenshot').click()">
+            📷 Or click to upload an image from your device
+          </div>
+          <input type="file" id="f-screenshot" accept="image/*" style="display:none" onchange="handleScreenshot(event)">
+          <img id="screenshot-preview" class="screenshot-preview" style="display:none">
+        </div>
+
+        <div class="form-group full" style="display:flex;gap:10px;margin-top:8px">
+          <button class="btn btn-primary" onclick="saveTrade()" style="flex:1">Save Trade</button>
+          <button class="btn btn-ghost" onclick="resetForm()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="page-trades">
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <input type="text" class="form-input" id="search-input" placeholder="Search trades…" style="flex:1;min-width:160px" oninput="renderTradeList()">
+        <select class="form-select" id="filter-symbol" onchange="renderTradeList()" style="width:140px">
+          <option value="">All symbols</option>
+          <option value="MES">MES</option>
+          <option value="MNQ">MNQ</option>
+          <option value="MYM">MYM</option>
+          <option value="MGC">MGC</option>
+        </select>
+        <select class="form-select" id="filter-session" onchange="renderTradeList()" style="width:140px">
+          <option value="">All time sessions</option>
+          <option value="London">London</option>
+          <option value="NY AM">NY AM</option>
+          <option value="NY Lunch">NY Lunch</option>
+          <option value="NY PM">NY PM</option>
+          <option value="Asia">Asia</option>
+        </select>
+        <select class="form-select" id="filter-result" onchange="renderTradeList()" style="width:120px">
+          <option value="">All results</option>
+          <option value="win">Wins</option>
+          <option value="loss">Losses</option>
+          <option value="breakeven">Breakeven</option>
+        </select>
+      </div>
+    </div>
+    <div class="card">
+      <div id="trade-list-container"></div>
+    </div>
+  </div>
+
+  <div class="page" id="page-breakdown">
+    <div class="three-col">
+      <div class="card">
+        <div class="card-header"><div class="card-title">By Setup Tag</div></div>
+        <div id="bd-setup"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">By Session</div></div>
+        <div id="bd-session"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">By HTF Bias</div></div>
+        <div id="bd-bias"></div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><div class="card-title">By Symbol</div></div>
+        <div style="position:relative;height:200px">
+          <canvas id="symbolChart" role="img" aria-label="PnL by symbol"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Process vs Result</div></div>
+        <div style="position:relative;height:200px">
+          <canvas id="disciplineChart" role="img" aria-label="Process rating vs PnL"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Direction Performance</div></div>
+      <div id="bd-direction"></div>
+    </div>
+  </div>
+
+  <div class="page" id="page-ai">
+    <div class="card" style="max-width:800px">
+      <div class="card-header">
+        <div class="card-title">AI Trading Coach</div>
+        <button class="btn btn-ghost" onclick="clearChat()" style="padding:6px 12px;font-size:12px">Clear chat</button>
+      </div>
+      <div style="margin-bottom:14px">
+        <div class="pill-row">
+          <div class="pill" onclick="sendQuick('Analyze my biggest blindspots based on my trade data.')">Blindspot analysis</div>
+          <div class="pill" onclick="sendQuick('Which setup tag has the best edge? Where am I losing money?')">Best setups</div>
+          <div class="pill" onclick="sendQuick('What session should I avoid trading and why?')">Session analysis</div>
+          <div class="pill" onclick="sendQuick('Does trading with FOMO actually hurt my performance in the data?')">Discipline impact</div>
+          <div class="pill" onclick="sendQuick('Give me 3 specific, actionable improvements to make right now.')">Improvements</div>
+        </div>
+      </div>
+      <div class="ai-chat" id="ai-chat"></div>
+      <div class="ai-input-row">
+        <textarea class="form-textarea" id="ai-input" placeholder="Ask anything about your trades…" style="min-height:52px" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAI()}"></textarea>
+        <button class="btn btn-primary" onclick="sendAI()">Send</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">
+        The AI has full access to your filtered trade data. Shift+Enter for new line.
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="page-export">
+    <div class="card" style="max-width:740px">
+      <div class="card-header">
+        <div class="card-title">Export AI Analysis Report</div>
+        <button class="btn btn-primary" onclick="copyReport()">Copy to clipboard</button>
+      </div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:14px">
+        This is a pre-formatted prompt with all your currently filtered trade statistics. Paste it into any AI chat (ChatGPT, Gemini, Claude, etc.) for deep analysis.
+      </p>
+      <div class="report-box" id="report-output">Generate your report by clicking the button above, or log some trades first.</div>
+      <div style="margin-top:14px;display:flex;gap:10px">
+        <button class="btn btn-green" onclick="generateReport()">Regenerate report</button>
+        <button class="btn btn-ghost" onclick="downloadData()">Download all trade data (JSON)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="page-settings">
+    <div class="card" style="max-width:560px">
+      <div class="card-header"><div class="card-title">Settings</div></div>
+      
+      <div class="form-group full" style="margin-bottom:20px; padding:12px; background:var(--bg3); border-radius:var(--radius-sm); border:1px solid var(--border)">
+        <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:0">
+          <input type="checkbox" id="auto-backup-toggle" style="width:16px;height:16px;">
+          Auto-download JSON backup when saving a trade
+        </label>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Silently triggers a download to your browser's default Downloads folder to ensure you never lose data.</div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:16px">
+        <label class="form-label">Claude API Key (for AI Coach)</label>
+        <input type="password" class="form-input" id="api-key-input" placeholder="sk-ant-api03-...">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Stored locally in your browser only. Never sent anywhere except Anthropic's API.</div>
+      </div>
+      <div class="form-group" style="margin-bottom:16px">
+        <label class="form-label">ImgBB API Key (for unlimited screenshots)</label>
+        <input type="text" class="form-input" id="imgbb-key-input" placeholder="e.g., 5c4d6f8a9b...">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Required to upload charts. Get a free key at api.imgbb.com.</div>
+      </div>
+      <div class="form-group" style="margin-bottom:24px">
+        <label class="form-label">Default Contracts per Trade</label>
+        <input type="number" class="form-input" id="default-contracts" value="1" min="1" style="width:100px">
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="saveSettings()">Save settings</button>
+        <button class="btn btn-ghost" onclick="importData()">Restore JSON backup</button>
+        <button class="btn btn-danger" onclick="clearAllData()">Clear all data</button>
+      </div>
+      <input type="file" id="import-file" accept=".json" style="display:none" onchange="handleImport(event)">
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- TRADE MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lightbox-overlay" id="lightbox-overlay" onclick="closeLightbox(event)">
+  <button class="lightbox-close" onclick="closeLightbox(event)">✕ Close</button>
+  <img id="lightbox-img" class="lightbox-img" src="">
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ─── SUPABASE ───────────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://pjwslrvpdszbfxdwplvv.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_vhFVqQZhyTTZ8q8xemlscQ_t4T5GkxC';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let trades = [];
+let settings = JSON.parse(localStorage.getItem('bt_settings') || '{}');
+let editingId = null;
+let selectedDir = null;
+let selectedConviction = null;
+let selectedProcess = null;
+let screenshotData = null;
+let currentTradeList = [];
+let currentGlobalSession = ''; 
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+let aiHistory = [];
+let equityChartInst, winLossChartInst, tradeTimeChartInst, tradeDurationChartInst, setupChartInst,
+    dailyPnlChartInst, rDistChartInst, symbolChartInst, disciplineChartInst, rOptCurveChartInst;
+
+// Contract Specs
+const CONTRACT = {
+  MES: { tick: 0.25, tickValue: 1.25, name: 'Micro E-mini S&P 500' },
+  MNQ: { tick: 0.25, tickValue: 0.50, name: 'Micro E-mini Nasdaq' },
+  MYM: { tick: 1,    tickValue: 0.50, name: 'Micro E-mini Dow' },
+  MGC: { tick: 0.10, tickValue: 1.00, name: 'Micro Gold' },
+};
+
+// Autocomplete Dictionaries
+const AC_OPTIONS = {
+  btSession: [],
+  setup: [],
+  thesis: [
+    "Primary Thesis — This trade executes the main HTF-aligned idea I came in looking for.",
+    "Planned Counter-Cycle — This trade is a known, pre-planned lower-timeframe counter move within my HTF bias.",
+    "Improvised After Miss — I missed an entry on a move I correctly anticipated, and this trade emerged afterward.",
+    "Improvised, No Prior Read — This trade isn't connected to any prior thesis. It emerged in the moment with no premeditation either way."
+  ],
+  internal: [
+    "Instinct — Immediate, clean read. Felt obvious before analysis.",
+    "Reasoned — Thought it through, built a case, then entered.",
+    "Talked Into It — Wasn't sure, but kept looking until I convinced myself.",
+    "FOMO — Felt like I was missing a move already in progress.",
+    "Revenge — Entered shortly after a loss, felt an emotional pull to recover.",
+    "Bored — No strong conviction, entered because nothing else was happening.",
+    "Pressured — Felt urgency to enter before the \"opportunity\" disappeared.",
+    "Calm/Confident — Relaxed, no emotional charge, clear on the plan."
+  ],
+  volatility: [
+    "Expanding — Range and movement noticeably larger than recent average",
+    "Contracting — Choppy, narrow, grinding",
+    "Normal — Typical movement for this instrument"
+  ],
+  proximity: [
+    "At Level — Entering at or within a few ticks of a defined level",
+    "Near Level — Within a reasonable margin but not tight",
+    "In No Man's Land — No nearby structure justifying the entry"
+  ],
+  quartile: [
+    "Q1 — First 25% of session time",
+    "Q2 — 25–50%",
+    "Q3 — 50–75%",
+    "Q4 — Final 25%"
+  ],
+  failure: [
+    "Narrative Override — Price moved against me, I rebuilt the case for staying in rather than exiting at my level.",
+    "Revenge Spiral — Took this trade within 1–3 trades of a loss, felt the pull to recover.",
+    "Competence Illusion — Had been watching a long time, felt like I deeply understood what was happening, entered with high confidence that wasn't earned.",
+    "Winner's Tax — Took this trade after a strong session, felt loose or \"playing with house money.\"",
+    "Plan Deviation — Entered but moved stop, skipped target, or sized differently than pre-committed.",
+    "Chased — Price had already moved significantly toward my target before I entered.",
+    "Overtraded — This was trade N in a session where I had a rule or soft limit and crossed it.",
+    "None — Clean trade, no failure mode present."
+  ],
+  outcome: [
+    "Exited on plan", "Exited early", "Held past target", "Stopped out", "Manually closed early"
+  ]
+};
+
+function timeToMinutes(t) {
+  if (!t) return null;
+  // Robust parsing to handle both legacy 24h ("14:44") and new 12h formats ("2:44 PM")
+  let isPM = t.toLowerCase().includes('p');
+  let isAM = t.toLowerCase().includes('a');
+  
+  let timePart = t.replace(/[a-zA-Z\s]/g, '').trim(); 
+  const parts = timePart.split(':');
+  if (parts.length === 0) return null;
+  
+  let h = parseInt(parts[0]);
+  let m = parts.length > 1 ? parseInt(parts[1]) : 0;
+  
+  if (isNaN(h) || isNaN(m)) return null;
+
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+
+  return h * 60 + m;
+}
+
+function minutesToTimeLabel(mins) {
+  if (mins === null) return '';
+  const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+  let displayH = h % 12 || 12;
+  let ampm = h >= 12 ? 'PM' : 'AM';
+  return `${displayH}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// Custom Smart Time Formatting - Outputs strictly 12h AM/PM
+function formatSmartTime(el) {
+  let val = el.value.trim().toLowerCase();
+  if (!val) return;
+  let isPM = val.includes('p');
+  let isAM = val.includes('a');
+  val = val.replace(/[^0-9]/g, '');
+  if (!val) { el.value = ''; return; }
+  
+  let h = 0, m = 0;
+  if (val.length <= 2) { 
+      h = parseInt(val); m = 0; 
+  } else if (val.length === 3) { 
+      h = parseInt(val.substring(0,1)); m = parseInt(val.substring(1)); 
+  } else { 
+      h = parseInt(val.substring(0,2)); m = parseInt(val.substring(2,4)); 
+  }
+
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+  if (h > 23) h = 23;
+  if (m > 59) m = 59;
+  
+  let displayH = h % 12 || 12;
+  let ampm = h >= 12 ? 'PM' : 'AM';
+  
+  el.value = `${displayH}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function getExecutionValue(t) {
+  let h24 = "00";
+  let m24 = "00";
+  if (t.entryTime) {
+      let mins = timeToMinutes(t.entryTime);
+      if (mins !== null) {
+          h24 = String(Math.floor(mins / 60)).padStart(2, '0');
+          m24 = String(mins % 60).padStart(2, '0');
+      }
+  }
+  return t.date + ' ' + h24 + ':' + m24;
+}
+
+function sortTradesDesc(arr) {
+  // Master sort: strictly chronological by Date of Trade -> Time of Trade -> Fallback Timestamp
+  return [...arr].sort((a, b) => {
+     const execA = getExecutionValue(a);
+     const execB = getExecutionValue(b);
+     if (execA > execB) return -1;
+     if (execA < execB) return 1;
+     return b.timestamp - a.timestamp;
+  });
+}
+
+function getFilteredTrades() {
+  if (!currentGlobalSession) return trades;
+  return trades.filter(t => t.backtestSession === currentGlobalSession);
+}
+
+function changeGlobalSession() {
+  currentGlobalSession = document.getElementById('global-session-filter').value;
+  updateSidebarCount();
+  const activePage = document.querySelector('.page.active').id.replace('page-', '');
+  if (activePage === 'dashboard') renderDashboard();
+  if (activePage === 'stats') renderStats();
+  if (activePage === 'calendar') renderCalendar();
+  if (activePage === 'trades') renderTradeList();
+  if (activePage === 'breakdown') renderBreakdowns();
+}
+
+function updateBtSessionDropdowns() {
+  const sessions = [...new Set(trades.map(t => t.backtestSession).filter(Boolean))].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  AC_OPTIONS.btSession = sessions;
+  
+  const sidebarSel = document.getElementById('global-session-filter');
+  const currentVal = currentGlobalSession;
+  sidebarSel.innerHTML = '<option value="">All Backtest Sessions</option>' + sessions.map(s => `<option value="${s}">${s}</option>`).join('');
+  if (sessions.includes(currentVal)) { sidebarSel.value = currentVal; } 
+  else { currentGlobalSession = ''; sidebarSel.value = ''; }
+}
+
+function computeDuration(entryTime, exitTime) {
+  const e = timeToMinutes(entryTime), x = timeToMinutes(exitTime);
+  if (e == null || x == null) return null;
+  let diff = x - e;
+  if (diff < 0) diff += 1440; 
+  return diff;
+}
+
+function getSessionFromTime(timeStr) {
+  const mins = timeToMinutes(timeStr);
+  if (mins === null) return '';
+  if (mins >= 180 && mins < 480) return 'London';
+  if (mins >= 480 && mins < 720) return 'NY AM';
+  if (mins >= 720 && mins < 780) return 'NY Lunch';
+  if (mins >= 780 && mins < 1020) return 'NY PM';
+  return 'Asia';
+}
+
+function updateList(key, inputEl) {
+  let customVals = [];
+  
+  trades.forEach(t => {
+      let objKey = key;
+      if (key === 'failure') objKey = 'failureMode';
+      if (key === 'internal') objKey = 'internalState';
+      if (key === 'thesis') objKey = 'thesisClarity';
+      
+      let tk = t[objKey];
+      if(tk) {
+          if (key === 'setup') {
+              tk.split(',').map(s=>s.trim()).forEach(sub => {
+                  if (sub && !AC_OPTIONS[key].includes(sub) && !customVals.includes(sub)) customVals.push(sub);
+              });
+          } else {
+              if (!AC_OPTIONS[key].includes(tk) && !customVals.includes(tk)) customVals.push(tk);
+          }
+      }
+  });
+
+  let allOpts = [...AC_OPTIONS[key], ...customVals];
+  
+  if (key === 'btSession' || key === 'setup') {
+      allOpts.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }
+  
+  const drop = document.getElementById('ac-' + key);
+  
+  let fullVal = inputEl.value;
+  let searchVal = fullVal;
+  if (key === 'setup' && fullVal.includes(',')) {
+      let parts = fullVal.split(',');
+      searchVal = parts[parts.length-1].trim();
+  }
+  
+  const val = searchVal.toLowerCase();
+  const filtered = val ? allOpts.filter(o => o.toLowerCase().includes(val)) : allOpts;
+  
+  if (filtered.length) {
+      drop.innerHTML = filtered.map(o => `<div class="ac-item" onmousedown="selectAc(event, '${inputEl.id}', '${o.replace(/'/g, "\\'")}', '${key}')">${o}</div>`).join('');
+      drop.classList.add('open');
+  } else {
+      drop.classList.remove('open');
+  }
+}
+
+function selectAc(e, inputId, val, key) {
+  e.preventDefault(); 
+  const inputEl = document.getElementById(inputId);
+  if (key === 'setup') {
+      let parts = inputEl.value.split(',');
+      parts.pop(); 
+      if (parts.length > 0) inputEl.value = parts.join(',').trim() + ', ' + val + ', ';
+      else inputEl.value = val + ', ';
+  } else {
+      inputEl.value = val;
+  }
+  document.getElementById('ac-' + key).classList.remove('open');
+  if (inputId === 'f-bt-session' || inputId === 'f-setup') updateCalc();
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('custom-ac')) {
+      document.querySelectorAll('.ac-dropdown').forEach(d => d.classList.remove('open'));
+  }
+});
+
+const pageMeta = {
+  dashboard: { title: 'Dashboard', sub: 'Your backtest performance at a glance' },
+  stats: { title: 'Statistics', sub: 'Deep dive into your numbers' },
+  calendar: { title: 'Calendar', sub: 'Daily and weekly trading performance' },
+  log: { title: 'Log Trade', sub: 'Record a completed backtest trade' },
+  trades: { title: 'Trade List', sub: 'All logged backtest trades' },
+  breakdown: { title: 'Breakdowns', sub: 'Performance by category' },
+  ai: { title: 'AI Coach', sub: 'Get personalized analysis and improvements' },
+  export: { title: 'Export Report', sub: 'Generate a shareable analysis prompt' },
+  settings: { title: 'Settings', sub: 'API key, data management' },
+};
+
+function nav(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelector(`[onclick="nav('${page}')"]`)?.classList.add('active');
+  const meta = pageMeta[page] || {};
+  document.getElementById('page-title').textContent = meta.title || page;
+  document.getElementById('page-sub').textContent = meta.sub || '';
+  if (page === 'dashboard') renderDashboard();
+  if (page === 'stats') renderStats();
+  if (page === 'calendar') renderCalendar();
+  if (page === 'trades') renderTradeList();
+  if (page === 'breakdown') renderBreakdowns();
+  if (page === 'export') generateReport();
+  if (page === 'settings') loadSettings();
+  if (page === 'log' && !editingId) resetForm();
+}
+
+function resetForm() {
+  editingId = null;
+  selectedDir = null;
+  selectedConviction = null;
+  selectedProcess = null;
+  screenshotData = null;
+  document.getElementById('form-mode-label').textContent = 'New Trade';
+  
+  document.getElementById('f-bt-session').value = settings.lastBtSession || 'Default Session';
+  document.getElementById('f-date').value = settings.lastDate || new Date().toISOString().split('T')[0];
+  document.getElementById('f-symbol').value = 'MES';
+  document.getElementById('f-bias').value = 'Bullish';
+  document.getElementById('f-setup').value = '';
+  document.getElementById('f-entry').value = '';
+  document.getElementById('f-exit').value = '';
+  document.getElementById('f-sl-points').value = '';
+  document.getElementById('f-tp-points').value = '';
+  document.getElementById('f-contracts').value = settings.defaultContracts || 1;
+  document.getElementById('f-entry-time').value = '';
+  document.getElementById('f-exit-time').value = '';
+  document.getElementById('f-session-display').value = '';
+  document.getElementById('f-mfe').value = '';
+  document.getElementById('f-notes').value = '';
+  document.getElementById('f-tv-link').value = '';
+  document.getElementById('screenshot-preview').style.display = 'none';
+  document.getElementById('f-screenshot').value = '';
+  
+  ['f-internal','f-volatility','f-proximity','f-quartile','f-failure','f-outcome','f-thesis'].forEach(id => {
+      document.getElementById(id).value = '';
+  });
+
+  document.querySelectorAll('.rating-btn').forEach(b => b.classList.remove('selected'));
+  updateCalc();
+  AC_OPTIONS.setup = [...new Set(trades.flatMap(t => (t.setup || '').split(',').map(s => s.trim())).filter(Boolean))];
+}
+
+function setDir(d) {
+  selectedDir = d;
+  document.getElementById('dir-long').classList.toggle('selected', d === 'Long');
+  document.getElementById('dir-short').classList.toggle('selected', d === 'Short');
+  updateCalc();
+}
+
+function setConviction(r) {
+  selectedConviction = r;
+  document.querySelectorAll('#conviction-rating .rating-btn').forEach((b, i) => {
+    b.classList.toggle('selected', i + 1 === r);
+  });
+}
+function setProcess(r) {
+  selectedProcess = r;
+  document.querySelectorAll('#process-rating .rating-btn').forEach(b => {
+    b.classList.toggle('selected', b.textContent === r);
+  });
+}
+
+['f-entry', 'f-exit', 'f-sl-points', 'f-tp-points', 'f-symbol', 'f-contracts'].forEach(id => {
+  document.getElementById(id)?.addEventListener('input', updateCalc);
+});
+
+function updateCalc() {
+  const sym = document.getElementById('f-symbol').value;
+  const dir = selectedDir;
+  const entry = parseFloat(document.getElementById('f-entry').value);
+  const exit = parseFloat(document.getElementById('f-exit').value);
+  const slPoints = parseFloat(document.getElementById('f-sl-points').value);
+  const tpPoints = parseFloat(document.getElementById('f-tp-points').value);
+  const mfeVal = parseFloat(document.getElementById('f-mfe').value);
+  const contracts = parseInt(document.getElementById('f-contracts').value) || 1;
+  const entryTime = document.getElementById('f-entry-time').value;
+
+  document.getElementById('f-session-display').value = getSessionFromTime(entryTime);
+
+  const pnlEl = document.getElementById('calc-pnl');
+  const rEl = document.getElementById('calc-r');
+  const riskEl = document.getElementById('calc-risk');
+  const targetREl = document.getElementById('calc-target-r');
+  const maxREl = document.getElementById('calc-max-r');
+  
+  const spec = CONTRACT[sym];
+
+  pnlEl.textContent = '—'; pnlEl.style.color = '';
+  rEl.textContent = '—'; rEl.style.color = '';
+  riskEl.textContent = '—';
+  targetREl.textContent = '—';
+  maxREl.textContent = '—'; maxREl.style.color = '';
+
+  if (!spec) return;
+
+  if (entry && exit && dir) {
+    const ticks = (exit - entry) / spec.tick;
+    const dirMult = dir === 'Long' ? 1 : -1;
+    const pnl = ticks * spec.tickValue * dirMult * contracts;
+    
+    pnlEl.textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
+    if (pnl >= 5) pnlEl.style.color = 'var(--green)';
+    else if (pnl <= -5) pnlEl.style.color = 'var(--red)';
+    else pnlEl.style.color = 'var(--text)'; 
+    
+    if (slPoints && slPoints > 0) {
+      const r = ((exit - entry) * dirMult) / slPoints;
+      rEl.textContent = (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
+      if (pnl >= 5) rEl.style.color = 'var(--green)';
+      else if (pnl <= -5) rEl.style.color = 'var(--red)';
+      
+      if (!isNaN(mfeVal)) {
+          const maxR = mfeVal / slPoints;
+          maxREl.textContent = (maxR >= 0 ? '+' : '') + maxR.toFixed(2) + 'R';
+          maxREl.style.color = 'var(--blue)';
+      }
+    }
+  }
+
+  if (slPoints && slPoints > 0) {
+    const riskDollar = (slPoints / spec.tick) * spec.tickValue * contracts;
+    riskEl.textContent = '$' + riskDollar.toFixed(2);
+    
+    if (tpPoints && tpPoints > 0) {
+      const targetR = tpPoints / slPoints;
+      targetREl.textContent = targetR.toFixed(2) + 'R';
+    }
+  }
+}
+
+async function handleScreenshot(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const imgbbKey = localStorage.getItem('bt_imgbb_key') || '';
+  if (!imgbbKey) {
+    toast('Add your ImgBB API key in Settings first to upload images.', 'red');
+    event.target.value = '';
+    return;
+  }
+
+  const uploadZone = document.getElementById('upload-zone-ui');
+  uploadZone.textContent = '⏳ Uploading to ImgBB...';
+
+  const formData = new FormData();
+  formData.append('image', file);
+
+  try {
+    const res = await fetch('https://api.imgbb.com/1/upload?key=' + imgbbKey, {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      screenshotData = data.data.url;
+      const prev = document.getElementById('screenshot-preview');
+      prev.src = screenshotData;
+      prev.style.display = 'block';
+      toast('Screenshot uploaded!');
+    } else {
+      toast('Upload failed: ' + data.error.message, 'red');
+    }
+  } catch (e) {
+    toast('Error connecting to ImgBB API.', 'red');
+  } finally {
+    uploadZone.textContent = '📷 Click to upload an image from your device';
+    event.target.value = ''; 
+  }
+}
+
+async function saveTrade() {
+  const btSession = document.getElementById('f-bt-session').value.trim() || 'Default Session';
+  const date = document.getElementById('f-date').value;
+  const symbol = document.getElementById('f-symbol').value;
+  const dir = selectedDir;
+  const entry = parseFloat(document.getElementById('f-entry').value);
+  const exit = parseFloat(document.getElementById('f-exit').value);
+  const slPoints = parseFloat(document.getElementById('f-sl-points').value);
+  const tpPoints = parseFloat(document.getElementById('f-tp-points').value) || null;
+  const contracts = parseInt(document.getElementById('f-contracts').value) || 1;
+
+  if (!date || !dir || !entry || !exit) {
+    toast('Please fill in date, direction, entry, and exit price.', 'red');
+    return;
+  }
+
+  const spec = CONTRACT[symbol];
+  const dirMult = dir === 'Long' ? 1 : -1;
+  const pnl = ((exit - entry) / spec.tick) * spec.tickValue * dirMult * contracts;
+  const r = (slPoints && slPoints > 0) ? ((exit - entry) * dirMult) / slPoints : null;
+  const riskDollar = (slPoints && slPoints > 0) ? (slPoints / spec.tick) * spec.tickValue * contracts : null;
+  
+  const entryTime = document.getElementById('f-entry-time').value || null;
+  const exitTime = document.getElementById('f-exit-time').value || null;
+  const session = getSessionFromTime(entryTime);
+  
+  const mfeVal = parseFloat(document.getElementById('f-mfe').value);
+  const mfePoints = isNaN(mfeVal) ? null : mfeVal;
+  const mfeR = (mfePoints != null && slPoints && slPoints > 0) ? mfePoints / slPoints : null;
+  const durationMin = computeDuration(entryTime, exitTime);
+  
+  const tvLink = document.getElementById('f-tv-link').value.trim();
+  const finalImage = tvLink || screenshotData || null;
+
+  const trade = {
+    id: editingId || Date.now().toString(),
+    backtestSession: btSession,
+    date,
+    symbol,
+    direction: dir,
+    session,
+    htfBias: document.getElementById('f-bias').value,
+    setup: document.getElementById('f-setup').value.trim(),
+    entry,
+    exit,
+    slPoints: slPoints || null,
+    tpPoints: tpPoints,
+    contracts,
+    pnl: pnl || 0,
+    r: r,
+    riskDollar: riskDollar,
+    mfePoints: mfePoints,
+    mfeR: mfeR,
+    entryTime: entryTime,
+    exitTime: exitTime,
+    durationMin: durationMin,
+    conviction: selectedConviction,
+    processQuality: selectedProcess,
+    internalState: document.getElementById('f-internal').value.trim(),
+    volatility: document.getElementById('f-volatility').value.trim(),
+    proximity: document.getElementById('f-proximity').value.trim(),
+    quartile: document.getElementById('f-quartile').value.trim(),
+    failureMode: document.getElementById('f-failure').value.trim(),
+    outcome: document.getElementById('f-outcome').value.trim(),
+    thesisClarity: document.getElementById('f-thesis').value.trim(),
+    notes: document.getElementById('f-notes').value.trim(),
+    screenshot: finalImage,
+    timestamp: editingId ? (trades.find(t => t.id === editingId)?.timestamp || Date.now()) : Date.now(),
+  };
+
+  const ok = await upsertTradeToDb(trade);
+  if (!ok) return; // don't touch local state or the form if the cloud write failed
+
+  if (editingId) {
+    trades = trades.map(t => t.id === editingId ? trade : t);
+    toast('Trade updated!');
+  } else {
+    trades.push(trade);
+    toast('Trade saved!');
+  }
+
+  settings.lastBtSession = btSession;
+  settings.lastDate = date;
+  localStorage.setItem('bt_settings', JSON.stringify(settings));
+
+  cacheTradesLocally();
+  updateBtSessionDropdowns();
+  updateSidebarCount();
+  resetForm();
+  nav('trades');
+  
+  if (settings.autoBackup) downloadData();
+}
+
+// Local cache only — a convenience copy for downloadData()/offline viewing.
+// Supabase is the source of truth; every mutation is written there first.
+function cacheTradesLocally() { localStorage.setItem('bt_trades', JSON.stringify(trades)); }
+
+// ─── SUPABASE ROW MAPPING ───────────────────────────────────────────────────────
+function tradeToRow(t) {
+  return {
+    id: t.id, backtest_session: t.backtestSession, date: t.date, symbol: t.symbol,
+    direction: t.direction, session: t.session, htf_bias: t.htfBias, setup: t.setup,
+    entry: t.entry, exit: t.exit, sl_points: t.slPoints, tp_points: t.tpPoints,
+    contracts: t.contracts, pnl: t.pnl, r: t.r, risk_dollar: t.riskDollar,
+    mfe_points: t.mfePoints, mfe_r: t.mfeR, entry_time: t.entryTime, exit_time: t.exitTime,
+    duration_min: t.durationMin, conviction: t.conviction, process_quality: t.processQuality,
+    internal_state: t.internalState, volatility: t.volatility, proximity: t.proximity,
+    quartile: t.quartile, failure_mode: t.failureMode, outcome: t.outcome,
+    thesis_clarity: t.thesisClarity, notes: t.notes, screenshot: t.screenshot,
+    timestamp: t.timestamp,
+  };
+}
+
+function rowToTrade(row) {
+  return {
+    id: row.id, backtestSession: row.backtest_session, date: row.date, symbol: row.symbol,
+    direction: row.direction, session: row.session, htfBias: row.htf_bias, setup: row.setup,
+    entry: row.entry, exit: row.exit, slPoints: row.sl_points, tpPoints: row.tp_points,
+    contracts: row.contracts, pnl: row.pnl, r: row.r, riskDollar: row.risk_dollar,
+    mfePoints: row.mfe_points, mfeR: row.mfe_r, entryTime: row.entry_time, exitTime: row.exit_time,
+    durationMin: row.duration_min, conviction: row.conviction, processQuality: row.process_quality,
+    internalState: row.internal_state, volatility: row.volatility, proximity: row.proximity,
+    quartile: row.quartile, failureMode: row.failure_mode, outcome: row.outcome,
+    thesisClarity: row.thesis_clarity, notes: row.notes, screenshot: row.screenshot,
+    timestamp: row.timestamp,
+  };
+}
+
+// ─── SUPABASE CRUD ──────────────────────────────────────────────────────────────
+async function loadTradesFromDb() {
+  const { data, error } = await sb.from('trades').select('*');
+  if (error) { toast('Failed to load trades: ' + error.message, 'red'); trades = []; return; }
+  trades = (data || []).map(rowToTrade);
+  trades.forEach(t => { if (!t.backtestSession) t.backtestSession = 'Default Session'; });
+  cacheTradesLocally();
+}
+
+async function upsertTradeToDb(trade) {
+  const { error } = await sb.from('trades').upsert(tradeToRow(trade));
+  if (error) { toast('Sync failed: ' + error.message, 'red'); return false; }
+  return true;
+}
+
+async function deleteTradeFromDb(id) {
+  const { error } = await sb.from('trades').delete().eq('id', id);
+  if (error) { toast('Delete failed: ' + error.message, 'red'); return false; }
+  return true;
+}
+
+async function bulkUpsertTradesToDb(tradeArr) {
+  const { error } = await sb.from('trades').upsert(tradeArr.map(tradeToRow));
+  if (error) { toast('Import failed: ' + error.message, 'red'); return false; }
+  return true;
+}
+
+async function deleteAllTradesFromDb() {
+  const { data: { user } } = await sb.auth.getUser();
+  const { error } = await sb.from('trades').delete().eq('user_id', user.id);
+  if (error) { toast('Clear failed: ' + error.message, 'red'); return false; }
+  return true;
+}
+
+// ─── AUTH ───────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'Enter your email and password.'; return; }
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { errEl.textContent = error.message; return; }
+  document.getElementById('login-password').value = '';
+  await enterApp();
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+  trades = [];
+  document.getElementById('app-shell').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+async function enterApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = 'flex';
+  await loadTradesFromDb();
+  updateBtSessionDropdowns();
+  updateSidebarCount();
+  resetForm();
+  renderDashboard();
+}
+
+function updateSidebarCount() {
+  const fTrades = getFilteredTrades();
+  document.getElementById('trade-count-sidebar').textContent = `${fTrades.length} trades visible`;
+}
+
+function downloadData() {
+  const blob = new Blob([JSON.stringify({ trades, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `bt-journal-backup-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+}
+
+function renderTradeList() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const sym = document.getElementById('filter-symbol').value;
+  const sess = document.getElementById('filter-session').value;
+  const res = document.getElementById('filter-result').value;
+
+  const tradeArr = getFilteredTrades();
+
+  let filtered = tradeArr.filter(t => {
+    if (sym && t.symbol !== sym) return false;
+    if (sess && t.session !== sess) return false;
+    if (res === 'win' && t.pnl < 5) return false; 
+    if (res === 'loss' && t.pnl > -5) return false; 
+    if (res === 'breakeven' && (t.pnl >= 5 || t.pnl <= -5)) return false; 
+    if (q && !`${t.date} ${t.symbol} ${t.setup} ${t.notes}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  
+  currentTradeList = sortTradesDesc(filtered);
+
+  const el = document.getElementById('trade-list-container');
+  if (!currentTradeList.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><p>No trades match your filters.</p></div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <table class="trade-table">
+      <thead><tr>
+        <th>Date</th><th>Symbol</th><th>Dir</th><th>Time Session</th><th>Setup</th>
+        <th>Entry</th><th>Exit</th><th>P&L</th><th>R</th><th>Conv.</th><th>Proc.</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${currentTradeList.map(t => {
+          const tags = (t.setup || '').split(',').map(s => s.trim()).filter(Boolean);
+          const tagsDisplay = tags.length ? tags.map(tag => `<span class="tag-chip" style="padding:1px 6px;font-size:10px">${tag}</span>`).join('') : '—';
+          const dispTime = t.entryTime ? minutesToTimeLabel(timeToMinutes(t.entryTime)) : '';
+          return `
+          <tr onclick="openTrade('${t.id}')" style="cursor:pointer">
+            <td style="color:var(--text2)">${t.date} ${dispTime ? `<span style="font-size:10px">(${dispTime})</span>` : ''}</td>
+            <td><span class="badge ${t.symbol === 'MES' ? 'badge-blue' : t.symbol === 'MNQ' ? 'badge-purple' : t.symbol === 'MYM' ? 'badge-amber' : 'badge-green'}">${t.symbol}</span></td>
+            <td><span class="badge ${t.direction === 'Long' ? 'badge-green' : 'badge-red'}">${t.direction === 'Long' ? '⬆' : '⬇'} ${t.direction}</span></td>
+            <td style="color:var(--text2)">${t.session}</td>
+            <td>${tagsDisplay}</td>
+            <td style="font-family:var(--font-mono);font-size:12px">${t.entry}</td>
+            <td style="font-family:var(--font-mono);font-size:12px">${t.exit}</td>
+            <td style="font-weight:700;color:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}</td>
+            <td style="font-weight:600;color:${t.r == null ? 'var(--text3)' : t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : '—'}</td>
+            <td>${t.conviction || t.discipline || '—'}</td>
+            <td>${t.processQuality || '—'}</td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-ghost" style="padding:4px 8px;font-size:11px" onclick="editTrade('${t.id}');event.stopPropagation()">Edit</button>
+              <button class="btn btn-danger" style="padding:4px 8px;font-size:11px;margin-left:4px" onclick="deleteTrade('${t.id}');event.stopPropagation()">Del</button>
+            </td>
+          </tr>
+        `}).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function openTrade(id) {
+  let list = (typeof currentTradeList !== 'undefined' && currentTradeList.some(x=>x.id===id)) ? currentTradeList : sortTradesDesc(getFilteredTrades());
+  const t = list.find(x => x.id === id);
+  if (!t) return;
+  
+  const idx = list.findIndex(x => x.id === id);
+  const newerId = idx > 0 ? list[idx - 1].id : null; 
+  const olderId = idx < list.length - 1 ? list[idx + 1].id : null;
+  
+  const modal = document.getElementById('modal-content');
+  
+  const setupTags = (t.setup || '').split(',').map(s => s.trim()).filter(Boolean);
+  const setupDisplay = setupTags.length ? setupTags.map(tag => `<span class="tag-chip">${tag}</span>`).join('') : '<span style="font-size:12px;color:var(--text3)">No tags</span>';
+  
+  const slPts = t.slPoints || (t.stop ? Math.abs(t.entry - t.stop) : '—');
+  let mfeDisplay = '—';
+  if (t.mfePoints != null) { mfeDisplay = `${t.mfePoints} pts (${t.mfeR != null ? t.mfeR.toFixed(1) + 'R' : '—'})`; } 
+  else if (t.mfeR != null) { mfeDisplay = `${t.mfeR.toFixed(1)}R`; }
+
+  const psychKeys = ['thesisClarity', 'internalState', 'volatility', 'proximity', 'quartile', 'failureMode', 'outcome'];
+  const psychChips = psychKeys.map(k => {
+      if(t[k]) return `<span class="tag-chip" style="background:var(--purple-dim);color:var(--purple);border:1px solid rgba(167,139,250,0.3);padding:2px 8px;font-size:10px;">${t[k].split(' — ')[0]}</span>`;
+      return '';
+  }).join('');
+
+  const entryTimeDisp = t.entryTime ? minutesToTimeLabel(timeToMinutes(t.entryTime)) : '';
+  const exitTimeDisp = t.exitTime ? minutesToTimeLabel(timeToMinutes(t.exitTime)) : '';
+
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+      <div>
+        <div style="font-size:18px;font-weight:700">${t.symbol} ${t.direction} — ${t.date}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:4px">${t.backtestSession || 'Default Session'} | ${t.session || 'Unknown Time'} | HTF Bias: ${t.htfBias}</div>
+        <div style="margin-top:8px">${setupDisplay}</div>
+        ${psychChips ? `<div style="margin-top:8px">${psychChips}</div>` : ''}
+      </div>
+      <button class="btn btn-ghost" style="padding:6px 10px" onclick="closeModal()">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">
+      <div class="metric-card" style="padding:12px">
+        <div class="metric-label">Dollar P&L</div>
+        <div class="metric-value" style="font-size:20px;color:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}</div>
+      </div>
+      <div class="metric-card" style="padding:12px">
+        <div class="metric-label">Realized R</div>
+        <div class="metric-value" style="font-size:20px;color:${t.r == null ? '' : t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : '—'}</div>
+      </div>
+      <div class="metric-card" style="padding:12px">
+        <div class="metric-label">Risk</div>
+        <div class="metric-value" style="font-size:20px">${t.riskDollar ? '$' + t.riskDollar.toFixed(2) : '—'}</div>
+      </div>
+    </div>
+    <table style="width:100%;font-size:13px;margin-bottom:16px">
+      <tr><td style="color:var(--text3);padding:5px 0;width:120px">Entry</td><td style="font-family:var(--font-mono)">${t.entry} ${entryTimeDisp ? `at ${entryTimeDisp}` : ''}</td></tr>
+      <tr><td style="color:var(--text3);padding:5px 0">Exit</td><td style="font-family:var(--font-mono)">${t.exit} ${exitTimeDisp ? `at ${exitTimeDisp}` : ''}</td></tr>
+      <tr><td style="color:var(--text3);padding:5px 0">Stop Loss</td><td style="font-family:var(--font-mono)">${slPts} pts</td></tr>
+      <tr><td style="color:var(--text3);padding:5px 0">Initial Target</td><td style="font-family:var(--font-mono)">${t.tpPoints ? t.tpPoints + ' pts' : '—'}</td></tr>
+      <tr><td style="color:var(--text3);padding:5px 0">Max Excursion</td><td style="font-family:var(--font-mono)">${mfeDisplay}</td></tr>
+      <tr><td style="color:var(--text3);padding:5px 0">Contracts</td><td>${t.contracts}</td></tr>
+      <tr><td style="color:var(--text3);padding:5px 0">Process & Conv.</td><td>${t.processQuality||'—'} / ${t.conviction || t.discipline || '—'}</td></tr>
+    </table>
+    ${t.notes ? `<div style="background:var(--bg3);border-radius:8px;padding:12px;font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">${t.notes}</div>` : ''}
+    ${t.screenshot ? `<img src="${t.screenshot}" onclick="openLightbox('${t.screenshot}')" title="Click to view full size" style="width:100%;border-radius:8px;border:1px solid var(--border);margin-bottom:12px;cursor:zoom-in">` : ''}
+    <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
+      <div>
+        <button class="btn btn-ghost" onclick="openTrade('${olderId}')" ${!olderId ? 'disabled' : ''}>← Older</button>
+        <button class="btn btn-ghost" onclick="openTrade('${newerId}')" ${!newerId ? 'disabled' : ''}>Newer →</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="editTrade('${t.id}');closeModal()">Edit</button>
+        <button class="btn btn-danger" onclick="deleteTrade('${t.id}');closeModal()">Delete</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(event) {
+  if (!event || event.target === document.getElementById('modal-overlay')) {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+}
+
+function openLightbox(url) {
+  document.getElementById('lightbox-img').src = url;
+  document.getElementById('lightbox-overlay').classList.add('open');
+}
+
+function closeLightbox(e) {
+  if (!e || e.target === document.getElementById('lightbox-overlay') || e.target.classList.contains('lightbox-close')) {
+    document.getElementById('lightbox-overlay').classList.remove('open');
+    setTimeout(() => { document.getElementById('lightbox-img').src = ''; }, 200);
+  }
+}
+
+function editTrade(id) {
+  const t = trades.find(t => t.id === id);
+  if (!t) return;
+  editingId = id;
+  nav('log');
+  document.getElementById('form-mode-label').textContent = 'Edit Trade';
+  
+  document.getElementById('f-bt-session').value = t.backtestSession || 'Default Session';
+  document.getElementById('f-date').value = t.date;
+  document.getElementById('f-symbol').value = t.symbol;
+  document.getElementById('f-bias').value = t.htfBias;
+  document.getElementById('f-setup').value = t.setup || '';
+  document.getElementById('f-entry').value = t.entry;
+  document.getElementById('f-exit').value = t.exit;
+  document.getElementById('f-contracts').value = t.contracts;
+  
+  document.getElementById('f-entry-time').value = t.entryTime || '';
+  if(t.entryTime) formatSmartTime(document.getElementById('f-entry-time'));
+  document.getElementById('f-exit-time').value = t.exitTime || '';
+  if(t.exitTime) formatSmartTime(document.getElementById('f-exit-time'));
+  
+  document.getElementById('f-internal').value = t.internalState || '';
+  document.getElementById('f-volatility').value = t.volatility || '';
+  document.getElementById('f-proximity').value = t.proximity || '';
+  document.getElementById('f-quartile').value = t.quartile || '';
+  document.getElementById('f-failure').value = t.failureMode || '';
+  document.getElementById('f-outcome').value = t.outcome || '';
+  document.getElementById('f-thesis').value = t.thesisClarity || '';
+  
+  let loadedMfePoints = t.mfePoints != null ? t.mfePoints : '';
+  if (loadedMfePoints === '' && t.mfeR != null && t.slPoints) { loadedMfePoints = (t.mfeR * t.slPoints).toFixed(2); }
+  document.getElementById('f-mfe').value = loadedMfePoints;
+  document.getElementById('f-notes').value = t.notes || '';
+  
+  document.getElementById('f-sl-points').value = t.slPoints || (t.stop ? Math.abs(t.entry - t.stop) : '');
+  document.getElementById('f-tp-points').value = t.tpPoints || '';
+  
+  if(t.screenshot && t.screenshot.includes('tradingview.com')) {
+      document.getElementById('f-tv-link').value = t.screenshot;
+      screenshotData = null; 
+      document.getElementById('screenshot-preview').style.display = 'none';
+  } else if (t.screenshot) {
+      document.getElementById('f-tv-link').value = '';
+      screenshotData = t.screenshot;
+      const prev = document.getElementById('screenshot-preview');
+      prev.src = t.screenshot;
+      prev.style.display = 'block';
+  }
+
+  setDir(t.direction);
+  if (t.conviction || t.discipline) setConviction(t.conviction || t.discipline);
+  if (t.processQuality) setProcess(t.processQuality);
+  
+  updateCalc();
+}
+
+async function deleteTrade(id) {
+  if (!confirm('Delete this trade?')) return;
+  const ok = await deleteTradeFromDb(id);
+  if (!ok) return;
+  trades = trades.filter(t => t.id !== id);
+  cacheTradesLocally();
+  updateBtSessionDropdowns();
+  updateSidebarCount();
+  renderTradeList();
+  toast('Trade deleted.');
+}
+
+function computeStats(tradeArr) {
+  if (!tradeArr.length) return null;
+  const wins = tradeArr.filter(t => t.pnl >= 5);
+  const losses = tradeArr.filter(t => t.pnl <= -5);
+  
+  const totalPnl = tradeArr.reduce((s, t) => s + t.pnl, 0);
+  const decidedTrades = wins.length + losses.length;
+  const winRate = decidedTrades > 0 ? wins.length / decidedTrades : 0; 
+  
+  const avgWin = wins.length ? wins.reduce((s, t) => s + t.pnl, 0) / wins.length : 0;
+  const avgLoss = losses.length ? Math.abs(losses.reduce((s, t) => s + t.pnl, 0) / losses.length) : 0;
+  const profitFactor = avgLoss === 0 ? (avgWin > 0 ? Infinity : 0) : (wins.length * avgWin) / (losses.length * avgLoss);
+  
+  const rArr = tradeArr.filter(t => t.r != null).map(t => t.r);
+  const avgR = rArr.length ? rArr.reduce((s, r) => s + r, 0) / rArr.length : null;
+  const netR = rArr.length ? rArr.reduce((s, r) => s + r, 0) : null;
+  
+  const expectancy = tradeArr.length ? totalPnl / tradeArr.length : 0;
+  
+  let equity = 0, peak = 0, maxDD = 0;
+  
+  const sorted = sortTradesDesc(tradeArr).reverse();
+  
+  sorted.forEach(t => {
+    equity += t.pnl;
+    if (equity > peak) peak = equity;
+    const dd = peak - equity;
+    if (dd > maxDD) maxDD = dd;
+  });
+
+  let curWin = 0, curLoss = 0, maxWinStr = 0, maxLossStr = 0;
+  sorted.forEach(t => {
+    if (t.pnl >= 5) { curWin++; curLoss = 0; maxWinStr = Math.max(maxWinStr, curWin); }
+    else if (t.pnl <= -5) { curLoss++; curWin = 0; maxLossStr = Math.max(maxLossStr, curLoss); }
+    else { curWin = 0; curLoss = 0; } 
+  });
+
+  return { totalPnl, wins: wins.length, losses: losses.length, winRate, avgWin, avgLoss,
+    profitFactor, avgR, netR, expectancy, maxDD, maxWinStr, maxLossStr, total: tradeArr.length };
+}
+
+function renderDashboard() {
+  const tradeArr = getFilteredTrades();
+  const s = computeStats(tradeArr);
+  const el = document.getElementById('dash-metrics');
+  if (!s) {
+    el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">📊</div><p>No trades match your current filters.</p></div>`;
+    renderDashCharts([]);
+    renderRecentTrades(tradeArr);
+    return;
+  }
+  el.innerHTML = `
+    <div class="metric-card"><div class="metric-label">Net P&L</div><div class="metric-value ${s.totalPnl >= 0 ? 'green' : 'red'}">${s.totalPnl >= 0 ? '+$' : '-$'}${Math.abs(s.totalPnl).toFixed(2)}</div><div class="metric-sub">${s.total} trades</div></div>
+    <div class="metric-card"><div class="metric-label">Win Rate</div><div class="metric-value blue">${(s.winRate * 100).toFixed(1)}%</div><div class="metric-sub">${s.wins}W / ${s.losses}L</div></div>
+    <div class="metric-card"><div class="metric-label">Profit Factor</div><div class="metric-value ${s.profitFactor >= 1.5 ? 'green' : s.profitFactor >= 1 ? 'amber' : 'red'}">${isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : '∞'}</div><div class="metric-sub">Gross Win / Gross Loss</div></div>
+    <div class="metric-card"><div class="metric-label">Net R</div><div class="metric-value ${s.netR == null ? '' : s.netR >= 0 ? 'green' : 'red'}">${s.netR != null ? (s.netR >= 0 ? '+' : '') + s.netR.toFixed(2) + 'R' : '—'}</div><div class="metric-sub">Total R yielded</div></div>
+    <div class="metric-card"><div class="metric-label">Avg R</div><div class="metric-value ${s.avgR == null ? '' : s.avgR >= 0 ? 'green' : 'red'}">${s.avgR != null ? (s.avgR >= 0 ? '+' : '') + s.avgR.toFixed(2) + 'R' : '—'}</div><div class="metric-sub">per trade</div></div>
+    <div class="metric-card"><div class="metric-label">Expectancy</div><div class="metric-value ${s.expectancy >= 0 ? 'green' : 'red'}">${s.expectancy >= 0 ? '+$' : '-$'}${Math.abs(s.expectancy).toFixed(2)}</div><div class="metric-sub">per trade expected</div></div>
+  `;
+  renderDashCharts(tradeArr);
+  renderRecentTrades(tradeArr);
+}
+
+function renderDashCharts(tradeArr) {
+  const sorted = sortTradesDesc(tradeArr).reverse();
+
+  let cum = 0;
+  const eqLabels = [], eqData = [];
+  sorted.forEach(t => { cum += t.pnl; eqLabels.push(t.date); eqData.push(parseFloat(cum.toFixed(2))); });
+  
+  if (equityChartInst) equityChartInst.destroy();
+  const eqCtx = document.getElementById('equityChart').getContext('2d');
+  equityChartInst = new Chart(eqCtx, {
+    type: 'line',
+    data: { labels: eqLabels, datasets: [{ data: eqData, borderColor: '#2dd4a0', backgroundColor: 'rgba(45,212,160,0.08)', borderWidth: 2, fill: true, tension: 0.3, pointRadius: eqData.length < 30 ? 3 : 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.parsed.y >= 0 ? '+$' : '-$') + Math.abs(c.parsed.y).toFixed(2) } } }, scales: { x: { display: false }, y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#5a6070', callback: v => '$' + v } } } }
+  });
+
+  const wins = tradeArr.filter(t => t.pnl >= 5).length;
+  const losses = tradeArr.filter(t => t.pnl <= -5).length;
+  const be = tradeArr.filter(t => t.pnl > -5 && t.pnl < 5).length;
+  if (winLossChartInst) winLossChartInst.destroy();
+  const wlCtx = document.getElementById('winLossChart').getContext('2d');
+  winLossChartInst = new Chart(wlCtx, {
+    type: 'doughnut',
+    data: { labels: ['Wins', 'Losses', 'Breakeven'], datasets: [{ data: [wins, losses, be], backgroundColor: ['#2dd4a0', '#f0616a', '#5b9cf6'], borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'right', labels: { color: '#9da3b4', font: { size: 11 }, boxWidth: 10 } } } }
+  });
+
+  const timedTrades = tradeArr.filter(t => t.entryTime);
+  const timeEmptyEl = document.getElementById('tradeTimeChart-empty');
+  const timeCanvas = document.getElementById('tradeTimeChart');
+  if (tradeTimeChartInst) tradeTimeChartInst.destroy();
+  
+  if (!timedTrades.length) {
+    timeEmptyEl.style.display = 'block'; timeCanvas.style.display = 'none';
+  } else {
+    timeEmptyEl.style.display = 'none'; timeCanvas.style.display = 'block';
+    const timeWins = timedTrades.filter(t => t.pnl >= 5).map(t => ({ x: timeToMinutes(t.entryTime), y: t.pnl }));
+    const timeLosses = timedTrades.filter(t => t.pnl <= -5).map(t => ({ x: timeToMinutes(t.entryTime), y: t.pnl }));
+    tradeTimeChartInst = new Chart(timeCanvas.getContext('2d'), {
+      type: 'scatter',
+      data: { datasets: [
+        { label: 'Wins', data: timeWins, backgroundColor: 'rgba(45,212,160,0.75)', pointRadius: 5 },
+        { label: 'Losses', data: timeLosses, backgroundColor: 'rgba(240,97,106,0.75)', pointRadius: 5 }
+      ] },
+      options: {
+        responsive: true, maintainAspectRatio: false, 
+        plugins: { 
+            legend: { display: true, position: 'top', labels: { color: '#9da3b4', font: { size: 11 }, boxWidth: 10 } }, 
+            tooltip: { callbacks: { label: c => c.dataset.label + ': ' + minutesToTimeLabel(c.parsed.x) + ', ' + (c.parsed.y >= 0 ? '+$' : '-$') + Math.abs(c.parsed.y).toFixed(2) } } 
+        },
+        scales: {
+          x: { type: 'linear', min: 0, max: 1440, ticks: { color: '#9da3b4', stepSize: 180, callback: v => minutesToTimeLabel(v) }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'Entry time of day', color: '#5a6070' } },
+          y: { ticks: { color: '#5a6070', callback: v => '$' + v }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+      }
+    });
+  }
+
+  const durTrades = tradeArr.filter(t => t.durationMin != null);
+  const durEmptyEl = document.getElementById('tradeDurationChart-empty');
+  const durCanvas = document.getElementById('tradeDurationChart');
+  if (tradeDurationChartInst) tradeDurationChartInst.destroy();
+  
+  if (!durTrades.length) {
+    durEmptyEl.style.display = 'block'; durCanvas.style.display = 'none';
+  } else {
+    durEmptyEl.style.display = 'none'; durCanvas.style.display = 'block';
+    const durWins = durTrades.filter(t => t.pnl >= 5).map(t => ({ x: t.durationMin, y: t.pnl }));
+    const durLosses = durTrades.filter(t => t.pnl <= -5).map(t => ({ x: t.durationMin, y: t.pnl }));
+    tradeDurationChartInst = new Chart(durCanvas.getContext('2d'), {
+      type: 'scatter',
+      data: { datasets: [
+        { label: 'Wins', data: durWins, backgroundColor: 'rgba(45,212,160,0.75)', pointRadius: 5 },
+        { label: 'Losses', data: durLosses, backgroundColor: 'rgba(240,97,106,0.75)', pointRadius: 5 }
+      ] },
+      options: { 
+          responsive: true, maintainAspectRatio: false, 
+          plugins: { 
+              legend: { display: true, position: 'top', labels: { color: '#9da3b4', font: { size: 11 }, boxWidth: 10 } }, 
+              tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.x + 'm, ' + (c.parsed.y >= 0 ? '+$' : '-$') + Math.abs(c.parsed.y).toFixed(2) } } 
+          },
+          scales: {
+            x: { type: 'linear', min: 0, ticks: { color: '#9da3b4', callback: v => v + 'm' }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'Trade duration (minutes)', color: '#5a6070' } },
+            y: { ticks: { color: '#5a6070', callback: v => '$' + v }, grid: { color: 'rgba(255,255,255,0.05)' } }
+          }
+      }
+    });
+  }
+
+  const allTags = tradeArr.flatMap(t => (t.setup || '').split(',').map(s => s.trim())).filter(Boolean);
+  const uniqueTags = [...new Set(allTags)];
+  const setupData = uniqueTags.map(tag => tradeArr.filter(t => (t.setup||'').includes(tag)).reduce((sum, t) => sum + t.pnl, 0));
+  
+  if (setupChartInst) setupChartInst.destroy();
+  const setupCtx = document.getElementById('setupChart').getContext('2d');
+  setupChartInst = new Chart(setupCtx, {
+    type: 'bar',
+    data: { labels: uniqueTags.length ? uniqueTags : ['No tags'], datasets: [{ data: uniqueTags.length ? setupData : [0], backgroundColor: (uniqueTags.length ? setupData : [0]).map(v => v >= 0 ? 'rgba(91,156,246,0.7)' : 'rgba(240,97,106,0.7)'), borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.parsed.x >= 0 ? '+$' : '-$') + Math.abs(c.parsed.x).toFixed(2) } } }, scales: { x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#5a6070', callback: v => '$' + v } }, y: { ticks: { color: '#9da3b4', font: { size: 11 } }, grid: { display: false } } } }
+  });
+}
+
+function renderRecentTrades(tradeArr = getFilteredTrades()) {
+  const recent = sortTradesDesc(tradeArr).slice(0, 6);
+  const el = document.getElementById('dash-recent');
+  if (!recent.length) { el.innerHTML = '<div class="empty-state"><p>No trades yet.</p></div>'; return; }
+  el.innerHTML = `<table class="trade-table">
+    <thead><tr><th>Date</th><th>Symbol</th><th>Setup</th><th>P&L</th><th>R</th><th>Conv.</th></tr></thead>
+    <tbody>${recent.map(t => `
+      <tr onclick="openTrade('${t.id}')" style="cursor:pointer">
+        <td style="color:var(--text2)">${t.date}</td>
+        <td><span class="badge badge-blue">${t.symbol}</span></td>
+        <td style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px">${t.setup || '—'}</td>
+        <td style="font-weight:700;color:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}</td>
+        <td style="color:${t.r == null ? 'var(--text3)' : t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : '—'}</td>
+        <td>${t.conviction || t.discipline || '—'}</td>
+      </tr>
+    `).join('')}</tbody>
+  </table>`;
+}
+
+function renderStats() {
+  const tradeArr = getFilteredTrades();
+  const s = computeStats(tradeArr);
+  const el = document.getElementById('stats-metrics');
+  if (!s) { el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><p>No trades match your current filters.</p></div>`; return; }
+
+  el.innerHTML = `
+    <div class="metric-card"><div class="metric-label">Total Trades</div><div class="metric-value">${s.total}</div></div>
+    <div class="metric-card"><div class="metric-label">Avg Win</div><div class="metric-value green">+$${s.avgWin.toFixed(2)}</div></div>
+    <div class="metric-card"><div class="metric-label">Avg Loss</div><div class="metric-value red">-$${s.avgLoss.toFixed(2)}</div></div>
+    <div class="metric-card"><div class="metric-label">Win/Loss Ratio</div><div class="metric-value">${s.avgLoss ? (s.avgWin / s.avgLoss).toFixed(2) : '—'}</div></div>
+    <div class="metric-card"><div class="metric-label">Max Win Streak</div><div class="metric-value green">${s.maxWinStr}</div></div>
+    <div class="metric-card"><div class="metric-label">Max Loss Streak</div><div class="metric-value red">${s.maxLossStr}</div></div>
+    <div class="metric-card"><div class="metric-label">Expectancy</div><div class="metric-value ${s.expectancy >= 0 ? 'green' : 'red'}">${s.expectancy >= 0 ? '+$' : '-$'}${Math.abs(s.expectancy).toFixed(2)}</div></div>
+    <div class="metric-card"><div class="metric-label">Max Drawdown</div><div class="metric-value red">$${s.maxDD.toFixed(2)}</div></div>
+  `;
+
+  const sorted = sortTradesDesc(tradeArr).reverse();
+
+  const dayMap = {};
+  sorted.forEach(t => { dayMap[t.date] = (dayMap[t.date] || 0) + t.pnl; });
+  const dayLabels = Object.keys(dayMap), dayData = Object.values(dayMap);
+  if (dailyPnlChartInst) dailyPnlChartInst.destroy();
+  dailyPnlChartInst = new Chart(document.getElementById('dailyPnlChart').getContext('2d'), {
+    type: 'bar',
+    data: { labels: dayLabels, datasets: [{ data: dayData, backgroundColor: dayData.map(v => v >= 0 ? 'rgba(45,212,160,0.7)' : 'rgba(240,97,106,0.7)'), borderRadius: 3 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.parsed.y >= 0 ? '+$' : '-$') + Math.abs(c.parsed.y).toFixed(2) } } }, scales: { x: { ticks: { color: '#9da3b4', font: { size: 10 }, maxRotation: 45 }, grid: { display: false } }, y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#5a6070', callback: v => '$' + v } } } }
+  });
+
+  const rTrades = tradeArr.filter(t => t.r != null);
+  const rBuckets = {};
+  rTrades.forEach(t => {
+    const bucket = (Math.round(t.r * 2) / 2).toFixed(1);
+    rBuckets[bucket] = (rBuckets[bucket] || 0) + 1;
+  });
+  const rKeys = Object.keys(rBuckets).sort((a, b) => parseFloat(a) - parseFloat(b));
+  if (rDistChartInst) rDistChartInst.destroy();
+  rDistChartInst = new Chart(document.getElementById('rDistChart').getContext('2d'), {
+    type: 'bar',
+    data: { labels: rKeys.map(k => k + 'R'), datasets: [{ data: rKeys.map(k => rBuckets[k]), backgroundColor: rKeys.map(k => parseFloat(k) >= 0 ? 'rgba(91,156,246,0.7)' : 'rgba(240,97,106,0.7)'), borderRadius: 3 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9da3b4', font: { size: 11 } }, grid: { display: false } }, y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#5a6070' } } } }
+  });
+
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dowEl = document.getElementById('dow-breakdown');
+  dowEl.innerHTML = days.map(d => {
+    const dt = tradeArr.filter(t => days[new Date(t.date + 'T12:00:00').getDay()] === d);
+    const w = dt.filter(x => x.pnl >= 5).length;
+    const l = dt.filter(x => x.pnl <= -5).length;
+    const wr = (w + l > 0) ? (w / (w + l) * 100) : 0;
+    const pnl = dt.reduce((s, t) => s + t.pnl, 0);
+    return `<div class="breakdown-row">
+      <div class="breakdown-label">${d} <span style="color:var(--text3);font-size:10px">(${dt.length})</span></div>
+      <div class="breakdown-bar-bg"><div class="breakdown-bar" style="width:${wr}%;background:${wr >= 60 ? 'var(--green)' : wr >= 40 ? 'var(--amber)' : 'var(--red)'}"></div></div>
+      <div class="breakdown-stat" style="color:${pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${wr.toFixed(0)}% · ${pnl >= 0 ? '+$' : '-$'}${Math.abs(pnl).toFixed(0)}</div>
+    </div>`;
+  }).join('');
+
+  const recent30 = sorted.slice(-30);
+  const stEl = document.getElementById('streak-tracker');
+  stEl.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">
+    ${recent30.map(t => `<div class="streak-dot" style="background:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text3)'}" title="${t.date}: ${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}"></div>`).join('')}
+  </div>
+  <div style="font-size:12px;color:var(--text2)">
+    <span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px"><span class="streak-dot" style="background:var(--green)"></span> Win</span>
+    <span style="display:inline-flex;align-items:center;gap:6px"><span class="streak-dot" style="background:var(--red)"></span> Loss</span>
+    <div style="margin-top:10px;color:var(--text3)">Last ${recent30.length} chronological trades (Grey = Breakeven)</div>
+  </div>`;
+
+  renderROptimizer();
+}
+
+function simulateAtR(trade, targetR) {
+  const mfe = trade.mfeR != null ? trade.mfeR : Math.max(trade.r, 0);
+  let achieved;
+  if (mfe >= targetR) { achieved = targetR; } else { achieved = -1; }
+  return achieved * trade.riskDollar;
+}
+
+function computeROptCurve(eligible, step = 0.1, max = 5) {
+  const curve = [];
+  for (let i = 0; i <= Math.round(max / step); i++) {
+    const r = Math.round(i * step * 10) / 10;
+    const total = eligible.reduce((sum, t) => sum + simulateAtR(t, r), 0);
+    curve.push({ r, total });
+  }
+  return curve;
+}
+
+function renderROptimizer() {
+  const tradeArr = getFilteredTrades();
+  const eligible = tradeArr.filter(t => t.r != null && t.riskDollar);
+  const container = document.getElementById('r-optimizer-content');
+  if (eligible.length < 3) {
+    container.innerHTML = `<div class="empty-state"><p>Log at least 3 trades with a stop loss (and ideally MFE) to unlock the R-Multiple Optimizer.</p></div>`;
+    return;
+  }
+
+  const curve = computeROptCurve(eligible);
+  const optimal = curve.reduce((best, c) => c.total > best.total ? c : best, curve[0]);
+  const actualTotal = eligible.reduce((s, t) => s + t.pnl, 0);
+  const withMfe = eligible.filter(t => t.mfeR != null).length;
+
+  container.innerHTML = `
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6">
+      Simulates closing every eligible trade at a fixed R-multiple target. ${eligible.length} of ${tradeArr.length} trades have stop-loss data and qualify (${withMfe} also have logged MFE).
+    </p>
+    <div class="metrics-grid" style="margin-bottom:16px">
+      <div class="metric-card"><div class="metric-label">Actual P&amp;L (eligible)</div><div class="metric-value ${actualTotal >= 0 ? 'green' : 'red'}">${actualTotal >= 0 ? '+$' : '-$'}${Math.abs(actualTotal).toFixed(2)}</div></div>
+      <div class="metric-card"><div class="metric-label">Optimal Target</div><div class="metric-value blue">${optimal.r.toFixed(1)}R</div></div>
+      <div class="metric-card"><div class="metric-label">P&amp;L at Optimal</div><div class="metric-value ${optimal.total >= 0 ? 'green' : 'red'}">${optimal.total >= 0 ? '+$' : '-$'}${Math.abs(optimal.total).toFixed(2)}</div></div>
+      <div class="metric-card"><div class="metric-label">Improvement vs Actual</div><div class="metric-value ${(optimal.total - actualTotal) >= 0 ? 'green' : 'red'}">${(optimal.total - actualTotal) >= 0 ? '+$' : '-$'}${Math.abs(optimal.total - actualTotal).toFixed(2)}</div></div>
+    </div>
+    <div style="position:relative;height:200px;margin-bottom:18px">
+      <canvas id="rOptCurveChart" role="img" aria-label="Simulated P&L by R-multiple target"></canvas>
+    </div>
+    <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <label class="form-label">Target R-Multiple: <span id="r-opt-slider-value" style="color:var(--blue)">1.0R</span></label>
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="setROptSlider(${optimal.r})">Jump to optimal (${optimal.r.toFixed(1)}R)</button>
+    </div>
+    <input type="range" id="r-opt-slider" min="0" max="5" step="0.1" value="1" oninput="updateROptDisplay(this.value)">
+    <div id="r-opt-result" style="margin-top:14px"></div>
+  `;
+  renderROptCurveChart(curve, optimal);
+  updateROptDisplay(1);
+}
+
+function renderROptCurveChart(curve, optimal) {
+  if (rOptCurveChartInst) rOptCurveChartInst.destroy();
+  const ctx = document.getElementById('rOptCurveChart').getContext('2d');
+  rOptCurveChartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: 'Simulated P&L', data: curve.map(c => ({ x: c.r, y: c.total })), borderColor: '#5b9cf6', backgroundColor: 'rgba(91,156,246,0.08)', borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0 },
+        { label: 'Optimal', data: [{ x: optimal.r, y: optimal.total }], type: 'scatter', backgroundColor: '#2dd4a0', borderColor: '#2dd4a0', pointRadius: 6, pointHoverRadius: 7, showLine: false }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.parsed.x.toFixed(1) + 'R: ' + (c.parsed.y >= 0 ? '+$' : '-$') + Math.abs(c.parsed.y).toFixed(2) } } },
+      scales: {
+        x: { type: 'linear', min: 0, max: 5, ticks: { color: '#9da3b4', stepSize: 0.5, callback: v => v.toFixed(1) + 'R' }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'Target R-Multiple', color: '#5a6070' } },
+        y: { ticks: { color: '#5a6070', callback: v => '$' + v }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+}
+
+function updateROptDisplay(val) {
+  const r = parseFloat(val);
+  document.getElementById('r-opt-slider').value = r;
+  document.getElementById('r-opt-slider-value').textContent = r.toFixed(1) + 'R';
+
+  const tradeArr = getFilteredTrades();
+  const eligible = tradeArr.filter(t => t.r != null && t.riskDollar);
+  let total = 0, hits = 0;
+  eligible.forEach(t => {
+    const mfe = t.mfeR != null ? t.mfeR : Math.max(t.r, 0);
+    total += simulateAtR(t, r);
+    if (mfe >= r) hits++;
+  });
+  const hitRate = eligible.length ? (hits / eligible.length * 100) : 0;
+  
+  document.getElementById('r-opt-result').innerHTML = `
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="metric-label">Simulated P&amp;L at ${r.toFixed(1)}R</div><div class="metric-value ${total >= 0 ? 'green' : 'red'}">${total >= 0 ? '+$' : '-$'}${Math.abs(total).toFixed(2)}</div></div>
+      <div class="metric-card"><div class="metric-label">Target Hit Rate</div><div class="metric-value blue">${hitRate.toFixed(1)}%</div></div>
+      <div class="metric-card"><div class="metric-label">Trades Reaching Target</div><div class="metric-value">${hits} / ${eligible.length}</div></div>
+    </div>
+  `;
+}
+
+function setROptSlider(r) { document.getElementById('r-opt-slider').value = r; updateROptDisplay(r); }
+
+function renderCalendar() {
+  const tradeArr = getFilteredTrades();
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('cal-month-label').textContent = months[calMonth] + ' ' + calYear;
+
+  const headers = document.getElementById('cal-headers');
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  headers.innerHTML = days.map(d => `<div class="cal-header">${d}</div>`).join('');
+
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const dayMap = {};
+  tradeArr.forEach(t => {
+    const [y, m] = t.date.split('-').map(Number);
+    if (y === calYear && m - 1 === calMonth) {
+      const d = parseInt(t.date.split('-')[2]);
+      if (!dayMap[d]) dayMap[d] = { pnl: 0, trades: [] };
+      dayMap[d].pnl += t.pnl;
+      dayMap[d].trades.push(t);
+    }
+  });
+
+  const calEl = document.getElementById('cal-days');
+  let html = Array(firstDay).fill(`<div></div>`).join('');
+  for (let d = 1; d <= daysInMonth; d++) {
+    const info = dayMap[d];
+    let cls = 'cal-day';
+    if (info) {
+      cls += ' has-trades';
+      cls += info.pnl >= 5 ? ' win' : info.pnl <= -5 ? ' loss' : ' breakeven';
+    }
+    html += `<div class="${cls}" ${info ? `onclick="showDayDetail(${d})"` : ''}>
+      <div class="cal-day-num">${d}</div>
+      ${info ? `<div class="cal-day-pnl" style="color:${info.pnl >= 5 ? 'var(--green)' : info.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${info.pnl >= 0 ? '+' : ''}${info.pnl.toFixed(0)}</div>` : ''}
+    </div>`;
+  }
+  calEl.innerHTML = html;
+
+  const weeks = [[], [], [], [], []];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = new Date(calYear, calMonth, d).getDay();
+    const wk = Math.floor((firstDay + d - 1) / 7);
+    if (dayMap[d]) weeks[wk].push(dayMap[d].pnl);
+  }
+  const wkEl = document.getElementById('weekly-summary');
+  wkEl.innerHTML = weeks.filter(w => w.length).map((w, i) => {
+    const total = w.reduce((s, v) => s + v, 0);
+    return `<div class="breakdown-row">
+      <div class="breakdown-label">Week ${i + 1}</div>
+      <div class="breakdown-bar-bg"><div class="breakdown-bar" style="width:${Math.min(100, Math.abs(total) / 50 * 100)}%;background:${total >= 0 ? 'var(--green)' : 'var(--red)'}"></div></div>
+      <div class="breakdown-stat" style="color:${total >= 0 ? 'var(--green)' : 'var(--red)'}">${total >= 0 ? '+$' : '-$'}${Math.abs(total).toFixed(2)}</div>
+    </div>`;
+  }).join('') || '<div class="empty-state"><p>No trades this month.</p></div>';
+
+  const allDays = Object.entries(dayMap).map(([d, v]) => ({ day: d, pnl: v.pnl }));
+  allDays.sort((a, b) => b.pnl - a.pnl);
+  const bwEl = document.getElementById('best-worst');
+  if (!allDays.length) { bwEl.innerHTML = '<div class="empty-state"><p>No trades this month.</p></div>'; return; }
+  const best = allDays[0], worst = allDays[allDays.length - 1];
+  bwEl.innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Best day</div>
+      <div style="font-size:20px;font-weight:700;color:var(--green)">+$${best.pnl.toFixed(2)}</div>
+      <div style="font-size:12px;color:var(--text2)">${months[calMonth]} ${best.day}, ${calYear}</div>
+    </div>
+    <hr class="divider">
+    <div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Worst day</div>
+      <div style="font-size:20px;font-weight:700;color:var(--red)">-$${Math.abs(worst.pnl).toFixed(2)}</div>
+      <div style="font-size:12px;color:var(--text2)">${months[calMonth]} ${worst.day}, ${calYear}</div>
+    </div>
+  `;
+}
+function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
+function calNext() { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); }
+
+function showDayDetail(day) {
+  const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const dayTrades = sortTradesDesc(getFilteredTrades().filter(t => t.date === dateStr)).reverse();
+  if (!dayTrades.length) return;
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:17px;font-weight:700">${dateStr}</div>
+      <button class="btn btn-ghost" style="padding:6px 10px" onclick="closeModal()">✕</button>
+    </div>
+    <table class="trade-table">
+      <thead><tr><th>Symbol</th><th>Dir</th><th>Setup</th><th>P&L</th><th>R</th></tr></thead>
+      <tbody>${dayTrades.map(t => {
+        const tags = (t.setup || '').split(',').map(s => s.trim()).filter(Boolean);
+        const tagsDisplay = tags.length ? tags.map(tag => `<span class="tag-chip" style="font-size:9px;padding:1px 4px">${tag}</span>`).join('') : '—';
+        return `<tr onclick="openTrade('${t.id}');closeModal()" style="cursor:pointer">
+        <td>${t.symbol}</td>
+        <td>${t.direction}</td>
+        <td>${tagsDisplay}</td>
+        <td style="color:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">$${t.pnl.toFixed(2)}</td>
+        <td>${t.r != null ? t.r.toFixed(2) + 'R' : '—'}</td>
+      </tr>`}).join('')}</tbody>
+    </table>
+    <div style="margin-top:12px;font-weight:700;text-align:right;color:${dayTrades.reduce((s, t) => s + t.pnl, 0) >= 0 ? 'var(--green)' : 'var(--red)'}">
+      Day total: ${dayTrades.reduce((s, t) => s + t.pnl, 0) >= 0 ? '+$' : '-$'}${Math.abs(dayTrades.reduce((s, t) => s + t.pnl, 0)).toFixed(2)}
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function renderBreakdowns() {
+  const tradeArr = getFilteredTrades();
+  
+  renderBreakdownSetup('bd-setup', tradeArr);
+  renderBreakdown('bd-session', 'session', 'Session', tradeArr);
+  renderBreakdown('bd-bias', 'htfBias', 'HTF Bias', tradeArr);
+
+  const syms = ['MES', 'MNQ', 'MYM', 'MGC'];
+  const symPnl = syms.map(s => tradeArr.filter(t => t.symbol === s).reduce((sum, t) => sum + t.pnl, 0));
+  if (symbolChartInst) symbolChartInst.destroy();
+  symbolChartInst = new Chart(document.getElementById('symbolChart').getContext('2d'), {
+    type: 'bar',
+    data: { labels: syms, datasets: [{ data: symPnl, backgroundColor: ['rgba(91,156,246,0.7)', 'rgba(167,139,250,0.7)', 'rgba(244,185,66,0.7)', 'rgba(45,212,160,0.7)'], borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.parsed.y >= 0 ? '+$' : '-$') + Math.abs(c.parsed.y).toFixed(2) } } }, scales: { x: { ticks: { color: '#9da3b4' }, grid: { display: false } }, y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#5a6070', callback: v => '$' + v } } } }
+  });
+
+  const discMap = {};
+  tradeArr.forEach(t => { 
+      let qual = t.processQuality || '—';
+      if (!discMap[qual]) discMap[qual] = []; discMap[qual].push(t.pnl); 
+  });
+  const discLabels = ['A', 'B', 'C', 'D'];
+  const discAvg = discLabels.map(d => discMap[d] ? discMap[d].reduce((s, v) => s + v, 0) / discMap[d].length : 0);
+  if (disciplineChartInst) disciplineChartInst.destroy();
+  disciplineChartInst = new Chart(document.getElementById('disciplineChart').getContext('2d'), {
+    type: 'bar',
+    data: { labels: discLabels.map(d => 'Rating ' + d), datasets: [{ data: discAvg, backgroundColor: discAvg.map(v => v >= 0 ? 'rgba(45,212,160,0.7)' : 'rgba(240,97,106,0.7)'), borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.parsed.y >= 0 ? '+$' : '-$') + Math.abs(c.parsed.y).toFixed(2) } } }, scales: { x: { ticks: { color: '#9da3b4', font: { size: 11 } }, grid: { display: false } }, y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#5a6070', callback: v => '$' + v.toFixed(0) } } } }
+  });
+
+  const dirs = ['Long', 'Short'];
+  const dirEl = document.getElementById('bd-direction');
+  dirEl.innerHTML = dirs.map(d => {
+    const dt = tradeArr.filter(t => t.direction === d);
+    const s = computeStats(dt);
+    if (!s) return `<div class="breakdown-row"><div class="breakdown-label">${d}</div><div style="color:var(--text3);font-size:12px">No trades</div></div>`;
+    return `<div class="breakdown-row">
+      <div class="breakdown-label">${d}</div>
+      <div class="breakdown-bar-bg"><div class="breakdown-bar" style="width:${(s.winRate * 100).toFixed(0)}%;background:${d === 'Long' ? 'var(--green)' : 'var(--blue)'}"></div></div>
+      <div class="breakdown-stat">${(s.winRate * 100).toFixed(0)}% · ${s.totalPnl >= 0 ? '+$' : '-$'}${Math.abs(s.totalPnl).toFixed(0)} · ${dt.length} trades</div>
+    </div>`;
+  }).join('');
+}
+
+function renderBreakdownSetup(elId, tradeArr) {
+  const allTags = tradeArr.flatMap(t => (t.setup || '').split(',').map(s => s.trim())).filter(Boolean);
+  const uniqueTags = [...new Set(allTags)];
+  const el = document.getElementById(elId);
+  if (!uniqueTags.length) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return; }
+  
+  const maxPnl = Math.max(...uniqueTags.map(tag => Math.abs(tradeArr.filter(t => (t.setup||'').includes(tag)).reduce((s, t) => s + t.pnl, 0))));
+  el.innerHTML = uniqueTags.map(tag => {
+    const kt = tradeArr.filter(t => (t.setup||'').includes(tag));
+    const pnl = kt.reduce((s, t) => s + t.pnl, 0);
+    const w = kt.filter(x => x.pnl >= 5).length;
+    const l = kt.filter(x => x.pnl <= -5).length;
+    const wr = (w + l > 0) ? (w / (w + l) * 100) : 0;
+    const barWidth = maxPnl ? (Math.abs(pnl) / maxPnl * 100) : 0;
+    return `<div class="breakdown-row">
+      <div class="breakdown-label" style="font-size:11px;width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${tag}">${tag}</div>
+      <div class="breakdown-bar-bg"><div class="breakdown-bar" style="width:${barWidth}%;background:${pnl >= 0 ? 'var(--green)' : 'var(--red)'}"></div></div>
+      <div class="breakdown-stat" style="font-size:11px;color:${pnl >= 0 ? 'var(--green)' : 'var(--red)'}">
+        ${pnl >= 0 ? '+$' : '-$'}${Math.abs(pnl).toFixed(0)} <span style="color:var(--text3)">(${wr.toFixed(0)}%)</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderBreakdown(elId, field, label, tradeArr) {
+  const keys = [...new Set(tradeArr.map(t => t[field]).filter(Boolean))];
+  const el = document.getElementById(elId);
+  if (!keys.length) { el.innerHTML = '<div class="empty-state"><p>No data yet.</p></div>'; return; }
+  const maxPnl = Math.max(...keys.map(k => Math.abs(tradeArr.filter(t => t[field] === k).reduce((s, t) => s + t.pnl, 0))));
+  el.innerHTML = keys.map(k => {
+    const kt = tradeArr.filter(t => t[field] === k);
+    const pnl = kt.reduce((s, t) => s + t.pnl, 0);
+    const w = kt.filter(x => x.pnl >= 5).length;
+    const l = kt.filter(x => x.pnl <= -5).length;
+    const wr = (w + l > 0) ? (w / (w + l) * 100) : 0;
+    const barWidth = maxPnl ? (Math.abs(pnl) / maxPnl * 100) : 0;
+    return `<div class="breakdown-row">
+      <div class="breakdown-label" style="font-size:11px;width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${k}">${k}</div>
+      <div class="breakdown-bar-bg"><div class="breakdown-bar" style="width:${barWidth}%;background:${pnl >= 0 ? 'var(--green)' : 'var(--red)'}"></div></div>
+      <div class="breakdown-stat" style="font-size:11px;color:${pnl >= 0 ? 'var(--green)' : 'var(--red)'}">
+        ${pnl >= 0 ? '+$' : '-$'}${Math.abs(pnl).toFixed(0)} <span style="color:var(--text3)">(${wr.toFixed(0)}%)</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function buildContext() {
+  const tradeArr = getFilteredTrades();
+  const s = computeStats(tradeArr);
+  if (!s) return 'The user has no trades logged yet.';
+  
+  const sorted = sortTradesDesc(tradeArr);
+  
+  const allTags = tradeArr.flatMap(t => (t.setup || '').split(',').map(s => s.trim())).filter(Boolean);
+  const uniqueTags = [...new Set(allTags)];
+  const setupStats = uniqueTags.map(tag => {
+    const t = tradeArr.filter(x => (x.setup||'').includes(tag));
+    const pnl = t.reduce((sum, x) => sum + x.pnl, 0);
+    const w = t.filter(x => x.pnl >= 5).length, l = t.filter(x => x.pnl <= -5).length;
+    const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
+    return `${tag}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)} total`;
+  });
+  
+  const sessions = ['London', 'NY AM', 'NY Lunch', 'NY PM', 'Asia'];
+  const sessStats = sessions.map(sess => {
+    const t = tradeArr.filter(x => x.session === sess);
+    if (!t.length) return null;
+    const pnl = t.reduce((sum, x) => sum + x.pnl, 0);
+    const w = t.filter(x => x.pnl >= 5).length, l = t.filter(x => x.pnl <= -5).length;
+    const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
+    return `${sess}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)} total`;
+  }).filter(Boolean);
+
+  const recentNotes = sorted.slice(0, 10).filter(t => t.notes).map(t => `[${t.date} ${t.symbol} ${t.setup || 'no tag'}] ${t.notes}`);
+
+  const timedTrades = tradeArr.filter(t => t.entryTime);
+  let timeBlockStats = 'No entry times logged.';
+  if (timedTrades.length) {
+    const blocks = [
+      { label: '00:00-06:00', min: 0, max: 360 }, { label: '06:00-09:30', min: 360, max: 570 },
+      { label: '09:30-11:30', min: 570, max: 690 }, { label: '11:30-13:30', min: 690, max: 810 },
+      { label: '13:30-16:00', min: 810, max: 960 }, { label: '16:00-24:00', min: 960, max: 1440 },
+    ];
+    timeBlockStats = blocks.map(b => {
+      const bt = timedTrades.filter(t => { const m = timeToMinutes(t.entryTime); return m >= b.min && m < b.max; });
+      if (!bt.length) return null;
+      const pnl = bt.reduce((s, x) => s + x.pnl, 0);
+      const w = bt.filter(x => x.pnl >= 5).length, l = bt.filter(x => x.pnl <= -5).length;
+      const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
+      return `${b.label}: ${bt.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
+    }).filter(Boolean).join('\n') || 'No entry times logged.';
+  }
+
+  const durTrades = tradeArr.filter(t => t.durationMin != null);
+  let durationStats = 'No trade durations logged.';
+  if (durTrades.length) {
+    const buckets = [
+      { label: '0-5 min', min: 0, max: 5 }, { label: '5-15 min', min: 5, max: 15 },
+      { label: '15-30 min', min: 15, max: 30 }, { label: '30-60 min', min: 30, max: 60 },
+      { label: '60-120 min', min: 60, max: 120 }, { label: '120+ min', min: 120, max: Infinity },
+    ];
+    durationStats = buckets.map(b => {
+      const bt = durTrades.filter(t => t.durationMin >= b.min && t.durationMin < b.max);
+      if (!bt.length) return null;
+      const pnl = bt.reduce((s, x) => s + x.pnl, 0);
+      const w = bt.filter(x => x.pnl >= 5).length, l = bt.filter(x => x.pnl <= -5).length;
+      const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
+      return `${b.label}: ${bt.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
+    }).filter(Boolean).join('\n') || 'No trade durations logged.';
+  }
+
+  return `
+You are analyzing the backtest trading journal of a futures trader. Here are their full statistics:
+
+OVERVIEW
+- Total trades: ${s.total}
+- Net P&L: $${s.totalPnl.toFixed(2)}
+- Net R: ${s.netR != null ? s.netR.toFixed(2) + 'R' : 'N/A'}
+- Win rate: ${(s.winRate * 100).toFixed(1)}% (${s.wins} wins, ${s.losses} losses) - Excludes Breakeven trades.
+- Profit factor: ${isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : '∞'}
+- Average R: ${s.avgR != null ? s.avgR.toFixed(2) + 'R' : 'N/A'}
+- Expectancy: $${s.expectancy.toFixed(2)} per trade
+- Avg win: $${s.avgWin.toFixed(2)} | Avg loss: $${s.avgLoss.toFixed(2)}
+- Max drawdown: $${s.maxDD.toFixed(2)}
+- Best win streak: ${s.maxWinStr} | Worst loss streak: ${s.maxLossStr}
+
+INSTRUMENTS TRADED: ${[...new Set(tradeArr.map(t => t.symbol))].join(', ')}
+
+PERFORMANCE BY SETUP TAG
+${setupStats.length ? setupStats.join('\n') : 'No setup tags logged.'}
+
+PERFORMANCE BY SESSION
+${sessStats.join('\n')}
+
+HTF BIAS PERFORMANCE
+${[...new Set(tradeArr.map(t => t.htfBias).filter(Boolean))].map(b => {
+    const t = tradeArr.filter(x => x.htfBias === b);
+    const pnl = t.reduce((s, x) => s + x.pnl, 0);
+    const w = t.filter(x => x.pnl >= 5).length, l = t.filter(x => x.pnl <= -5).length;
+    const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
+    return `${b}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
+  }).join('\n') || 'No HTF bias data.'}
+
+PERFORMANCE BY TIME OF DAY (entry time)
+${timeBlockStats}
+
+PERFORMANCE BY TRADE DURATION
+${durationStats}
+
+RECENT TRADE NOTES (last 10 with notes)
+${recentNotes.length ? recentNotes.join('\n') : 'No notes logged.'}
+
+RECENT TRADES (last 20 chronological)
+${sorted.slice(0, 20).map(t => `${t.date} | ${t.symbol} | $${t.pnl.toFixed(2)} | ${t.r != null ? t.r.toFixed(2) + 'R' : 'no R'} | Process: ${t.processQuality||'?'} | Conviction: ${t.conviction||t.discipline||'?'}`).join('\n')}
+`;
+}
+
+async function sendAI() {
+  const input = document.getElementById('ai-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  const key = localStorage.getItem('bt_api_key') || '';
+  if (!key) {
+    toast('Add your Claude API key in Settings first.', 'red');
+    nav('settings');
+    return;
+  }
+  input.value = '';
+  appendMsg('user', msg);
+  const loadId = appendMsg('assistant', 'Analyzing your trade data…', true);
+
+  const sysPrompt = `You are a professional trading coach and data analyst specializing in futures trading. ${buildContext()} Be specific, data-driven, and actionable. Reference actual numbers from the data. Keep responses concise but insightful.`;
+
+  aiHistory.push({ role: 'user', content: msg });
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, system: sysPrompt, messages: aiHistory })
+    });
+    const data = await res.json();
+    const reply = data.content?.[0]?.text || data.error?.message || 'Error getting response.';
+    aiHistory.push({ role: 'assistant', content: reply });
+    updateMsg(loadId, reply);
+  } catch (e) {
+    updateMsg(loadId, 'Connection error. Check your API key and try again.');
+  }
+}
+
+function sendQuick(q) {
+  document.getElementById('ai-input').value = q;
+  sendAI();
+}
+
+let msgId = 0;
+function appendMsg(role, text, loading = false) {
+  const id = 'msg-' + (++msgId);
+  const chat = document.getElementById('ai-chat');
+  const label = role === 'user' ? '<div class="ai-label user-label">You</div>' : '<div class="ai-label ai-label-text">AI Coach</div>';
+  chat.innerHTML += `<div class="ai-msg ${role} ${loading ? 'loading' : ''}" id="${id}">${label}<div class="msg-body">${escHtml(text)}</div></div>`;
+  chat.scrollTop = chat.scrollHeight;
+  return id;
+}
+
+function updateMsg(id, text) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.classList.remove('loading');
+    el.querySelector('.msg-body').textContent = text;
+    document.getElementById('ai-chat').scrollTop = 9999;
+  }
+}
+
+function clearChat() { aiHistory = []; document.getElementById('ai-chat').innerHTML = ''; }
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function generateReport() {
+  const ctx = buildContext();
+  const prompt = `${ctx}\n\n---\nANALYSIS REQUEST\n\nPlease analyze the above futures backtest trading data and provide:\n1. EDGE ASSESSMENT — Is there a statistical edge? What's the verdict?\n2. BIGGEST BLINDSPOTS — Where is money being consistently lost?\n3. BEST SETUPS — Which conditions produce the strongest results?\n4. DISCIPLINE IMPACT — How is emotional trading affecting performance?\n5. TOP 3 IMPROVEMENTS — Specific, actionable changes to make right now.\n6. RISK MANAGEMENT — Any red flags in position sizing or drawdown?\n\nBe direct, data-driven, and reference specific numbers.`;
+  document.getElementById('report-output').textContent = prompt;
+}
+
+function copyReport() {
+  generateReport();
+  const text = document.getElementById('report-output').textContent;
+  navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard!')).catch(() => toast('Select all text and copy manually.', 'red'));
+}
+
+function loadSettings() {
+  document.getElementById('api-key-input').value = localStorage.getItem('bt_api_key') || '';
+  document.getElementById('imgbb-key-input').value = localStorage.getItem('bt_imgbb_key') || '';
+  document.getElementById('default-contracts').value = settings.defaultContracts || 1;
+  document.getElementById('auto-backup-toggle').checked = settings.autoBackup || false;
+}
+
+function saveSettings() {
+  const claudeKey = document.getElementById('api-key-input').value.trim();
+  const imgbbKey = document.getElementById('imgbb-key-input').value.trim();
+  
+  if (claudeKey) localStorage.setItem('bt_api_key', claudeKey); else localStorage.removeItem('bt_api_key');
+  if (imgbbKey) localStorage.setItem('bt_imgbb_key', imgbbKey); else localStorage.removeItem('bt_imgbb_key');
+
+  settings.defaultContracts = parseInt(document.getElementById('default-contracts').value) || 1;
+  settings.autoBackup = document.getElementById('auto-backup-toggle').checked;
+  localStorage.setItem('bt_settings', JSON.stringify(settings));
+  toast('Settings saved!');
+}
+
+function importData() { document.getElementById('import-file').click(); }
+
+function handleImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.trades && Array.isArray(data.trades)) {
+        if (confirm(`Importing ${data.trades.length} trades will be merged into your Supabase database (existing trades with the same ID will be overwritten). Are you sure?`)) {
+          data.trades.forEach(t => { if (!t.backtestSession) t.backtestSession = 'Default Session'; });
+          toast('Uploading to Supabase…');
+          const ok = await bulkUpsertTradesToDb(data.trades);
+          if (!ok) { event.target.value = ''; return; }
+          await loadTradesFromDb();
+          updateBtSessionDropdowns(); updateSidebarCount();
+          renderTradeList(); renderDashboard(); toast(`Restored ${data.trades.length} trades to the cloud.`);
+        }
+      } else { toast('Invalid backup file format.', 'red'); }
+    } catch { toast('Invalid JSON file.', 'red'); }
+    event.target.value = ''; 
+  };
+  reader.readAsText(file);
+}
+
+async function clearAllData() {
+  if (confirm('Delete ALL trades? This cannot be undone.')) {
+    const ok = await deleteAllTradesFromDb();
+    if (!ok) return;
+    trades = []; cacheTradesLocally(); updateBtSessionDropdowns(); updateSidebarCount();
+    toast('All data cleared.'); nav('dashboard');
+  }
+}
+
+function toast(msg, type = 'green') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.color = type === 'red' ? 'var(--red)' : 'var(--green)';
+  el.style.display = 'block'; setTimeout(() => { el.style.display = 'none'; }, 2800);
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    await enterApp();
+  } else {
+    document.getElementById('login-screen').style.display = 'flex';
+  }
+});
+</script>
+</body>
+</html>
