@@ -893,6 +893,11 @@
         <label class="form-label">Default Contracts per Trade</label>
         <input type="number" class="form-input" id="default-contracts" value="1" min="1" style="width:100px">
       </div>
+      <div class="form-group" style="margin-bottom:24px">
+        <label class="form-label">Breakeven Threshold (± R)</label>
+        <input type="number" class="form-input" id="breakeven-r-input" value="0.15" min="0" step="0.01" style="width:100px">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Trades within ± this many R of zero count as breakeven and are excluded from win rate, not counted as wins or losses. Default: 0.15R.</div>
+      </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="saveSettings()">Save settings</button>
         <button class="btn btn-ghost" onclick="importData()">Restore JSON backup</button>
@@ -925,6 +930,31 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let trades = [];
 let settings = JSON.parse(localStorage.getItem('bt_settings') || '{}');
+
+// ─── WIN / LOSS / BREAKEVEN CLASSIFICATION ──────────────────────────────────────
+// A trade counts as breakeven if its R-multiple falls within ± the configured
+// threshold (default 0.15R), rather than using a flat dollar amount. This keeps
+// tiny scratches (e.g. +0.04R) out of the win-rate math. Falls back to a $5
+// dollar threshold only for old/edge-case trades with no R-multiple recorded.
+function getBreakevenR() {
+  const v = parseFloat(settings.breakevenR);
+  return isNaN(v) ? 0.15 : v;
+}
+function classifyPnlR(pnl, r) {
+  const thresh = getBreakevenR();
+  if (r != null && !isNaN(r)) {
+    if (r > thresh) return 'win';
+    if (r < -thresh) return 'loss';
+    return 'breakeven';
+  }
+  if (pnl >= 5) return 'win';
+  if (pnl <= -5) return 'loss';
+  return 'breakeven';
+}
+function classifyTrade(t) { return classifyPnlR(t.pnl, t.r); }
+function isWin(t) { return classifyTrade(t) === 'win'; }
+function isLoss(t) { return classifyTrade(t) === 'loss'; }
+function resultColor(t) { const c = classifyTrade(t); return c === 'win' ? 'var(--green)' : c === 'loss' ? 'var(--red)' : 'var(--text)'; }
 let editingId = null;
 let selectedDir = null;
 let selectedConviction = null;
@@ -1315,17 +1345,17 @@ function updateCalc() {
     const ticks = (exit - entry) / spec.tick;
     const dirMult = dir === 'Long' ? 1 : -1;
     const pnl = ticks * spec.tickValue * dirMult * contracts;
-    
+    let r = null;
+    if (slPoints && slPoints > 0) r = ((exit - entry) * dirMult) / slPoints;
+    const resultClass = classifyPnlR(pnl, r);
+    const resultColor = resultClass === 'win' ? 'var(--green)' : resultClass === 'loss' ? 'var(--red)' : 'var(--text)';
+
     pnlEl.textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
-    if (pnl >= 5) pnlEl.style.color = 'var(--green)';
-    else if (pnl <= -5) pnlEl.style.color = 'var(--red)';
-    else pnlEl.style.color = 'var(--text)'; 
+    pnlEl.style.color = resultColor;
     
     if (slPoints && slPoints > 0) {
-      const r = ((exit - entry) * dirMult) / slPoints;
       rEl.textContent = (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
-      if (pnl >= 5) rEl.style.color = 'var(--green)';
-      else if (pnl <= -5) rEl.style.color = 'var(--red)';
+      rEl.style.color = resultColor;
       
       if (!isNaN(mfeVal)) {
           const maxR = mfeVal / slPoints;
@@ -1606,7 +1636,7 @@ function renderTradeList() {
     if (sess && t.session !== sess) return false;
     if (res === 'win' && t.pnl < 5) return false; 
     if (res === 'loss' && t.pnl > -5) return false; 
-    if (res === 'breakeven' && (t.pnl >= 5 || t.pnl <= -5)) return false; 
+    if (res === 'breakeven' && (isWin(t) || isLoss(t))) return false; 
     if (q && !`${t.date} ${t.symbol} ${t.setup} ${t.notes}`.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -1639,8 +1669,8 @@ function renderTradeList() {
             <td>${tagsDisplay}</td>
             <td style="font-family:var(--font-mono);font-size:12px">${t.entry}</td>
             <td style="font-family:var(--font-mono);font-size:12px">${t.exit}</td>
-            <td style="font-weight:700;color:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}</td>
-            <td style="font-weight:600;color:${t.r == null ? 'var(--text3)' : t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : '—'}</td>
+            <td style="font-weight:700;color:${isWin(t) ? 'var(--green)' : isLoss(t) ? 'var(--red)' : 'var(--text)'}">${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}</td>
+            <td style="font-weight:600;color:${t.r == null ? 'var(--text3)' : isWin(t) ? 'var(--green)' : isLoss(t) ? 'var(--red)' : 'var(--text)'}">${t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : '—'}</td>
             <td>${t.conviction || t.discipline || '—'}</td>
             <td>${t.processQuality || '—'}</td>
             <td style="white-space:nowrap">
@@ -1695,11 +1725,11 @@ function openTrade(id) {
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">
       <div class="metric-card" style="padding:12px">
         <div class="metric-label">Dollar P&L</div>
-        <div class="metric-value" style="font-size:20px;color:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}</div>
+        <div class="metric-value" style="font-size:20px;color:${isWin(t) ? 'var(--green)' : isLoss(t) ? 'var(--red)' : 'var(--text)'}">${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}</div>
       </div>
       <div class="metric-card" style="padding:12px">
         <div class="metric-label">Realized R</div>
-        <div class="metric-value" style="font-size:20px;color:${t.r == null ? '' : t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : '—'}</div>
+        <div class="metric-value" style="font-size:20px;color:${t.r == null ? '' : isWin(t) ? 'var(--green)' : isLoss(t) ? 'var(--red)' : 'var(--text)'}">${t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : '—'}</div>
       </div>
       <div class="metric-card" style="padding:12px">
         <div class="metric-label">Risk</div>
@@ -1819,8 +1849,8 @@ async function deleteTrade(id) {
 
 function computeStats(tradeArr) {
   if (!tradeArr.length) return null;
-  const wins = tradeArr.filter(t => t.pnl >= 5);
-  const losses = tradeArr.filter(t => t.pnl <= -5);
+  const wins = tradeArr.filter(t => isWin(t));
+  const losses = tradeArr.filter(t => isLoss(t));
   
   const totalPnl = tradeArr.reduce((s, t) => s + t.pnl, 0);
   const decidedTrades = wins.length + losses.length;
@@ -1849,8 +1879,8 @@ function computeStats(tradeArr) {
 
   let curWin = 0, curLoss = 0, maxWinStr = 0, maxLossStr = 0;
   sorted.forEach(t => {
-    if (t.pnl >= 5) { curWin++; curLoss = 0; maxWinStr = Math.max(maxWinStr, curWin); }
-    else if (t.pnl <= -5) { curLoss++; curWin = 0; maxLossStr = Math.max(maxLossStr, curLoss); }
+    if (isWin(t)) { curWin++; curLoss = 0; maxWinStr = Math.max(maxWinStr, curWin); }
+    else if (isLoss(t)) { curLoss++; curWin = 0; maxLossStr = Math.max(maxLossStr, curLoss); }
     else { curWin = 0; curLoss = 0; } 
   });
 
@@ -1895,8 +1925,8 @@ function renderDashCharts(tradeArr) {
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.parsed.y >= 0 ? '+$' : '-$') + Math.abs(c.parsed.y).toFixed(2) } } }, scales: { x: { display: false }, y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#5a6070', callback: v => '$' + v } } } }
   });
 
-  const wins = tradeArr.filter(t => t.pnl >= 5).length;
-  const losses = tradeArr.filter(t => t.pnl <= -5).length;
+  const wins = tradeArr.filter(t => isWin(t)).length;
+  const losses = tradeArr.filter(t => isLoss(t)).length;
   const be = tradeArr.filter(t => t.pnl > -5 && t.pnl < 5).length;
   if (winLossChartInst) winLossChartInst.destroy();
   const wlCtx = document.getElementById('winLossChart').getContext('2d');
@@ -1915,8 +1945,8 @@ function renderDashCharts(tradeArr) {
     timeEmptyEl.style.display = 'block'; timeCanvas.style.display = 'none';
   } else {
     timeEmptyEl.style.display = 'none'; timeCanvas.style.display = 'block';
-    const timeWins = timedTrades.filter(t => t.pnl >= 5).map(t => ({ x: timeToMinutes(t.entryTime), y: t.pnl }));
-    const timeLosses = timedTrades.filter(t => t.pnl <= -5).map(t => ({ x: timeToMinutes(t.entryTime), y: t.pnl }));
+    const timeWins = timedTrades.filter(t => isWin(t)).map(t => ({ x: timeToMinutes(t.entryTime), y: t.pnl }));
+    const timeLosses = timedTrades.filter(t => isLoss(t)).map(t => ({ x: timeToMinutes(t.entryTime), y: t.pnl }));
     tradeTimeChartInst = new Chart(timeCanvas.getContext('2d'), {
       type: 'scatter',
       data: { datasets: [
@@ -1946,8 +1976,8 @@ function renderDashCharts(tradeArr) {
     durEmptyEl.style.display = 'block'; durCanvas.style.display = 'none';
   } else {
     durEmptyEl.style.display = 'none'; durCanvas.style.display = 'block';
-    const durWins = durTrades.filter(t => t.pnl >= 5).map(t => ({ x: t.durationMin, y: t.pnl }));
-    const durLosses = durTrades.filter(t => t.pnl <= -5).map(t => ({ x: t.durationMin, y: t.pnl }));
+    const durWins = durTrades.filter(t => isWin(t)).map(t => ({ x: t.durationMin, y: t.pnl }));
+    const durLosses = durTrades.filter(t => isLoss(t)).map(t => ({ x: t.durationMin, y: t.pnl }));
     tradeDurationChartInst = new Chart(durCanvas.getContext('2d'), {
       type: 'scatter',
       data: { datasets: [
@@ -1992,8 +2022,8 @@ function renderRecentTrades(tradeArr = getFilteredTrades()) {
         <td style="color:var(--text2)">${t.date}</td>
         <td><span class="badge badge-blue">${t.symbol}</span></td>
         <td style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px">${t.setup || '—'}</td>
-        <td style="font-weight:700;color:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}</td>
-        <td style="color:${t.r == null ? 'var(--text3)' : t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : '—'}</td>
+        <td style="font-weight:700;color:${isWin(t) ? 'var(--green)' : isLoss(t) ? 'var(--red)' : 'var(--text)'}">${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}</td>
+        <td style="color:${t.r == null ? 'var(--text3)' : isWin(t) ? 'var(--green)' : isLoss(t) ? 'var(--red)' : 'var(--text)'}">${t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : '—'}</td>
         <td>${t.conviction || t.discipline || '—'}</td>
       </tr>
     `).join('')}</tbody>
@@ -2047,8 +2077,8 @@ function renderStats() {
   const dowEl = document.getElementById('dow-breakdown');
   dowEl.innerHTML = days.map(d => {
     const dt = tradeArr.filter(t => days[new Date(t.date + 'T12:00:00').getDay()] === d);
-    const w = dt.filter(x => x.pnl >= 5).length;
-    const l = dt.filter(x => x.pnl <= -5).length;
+    const w = dt.filter(x => isWin(x)).length;
+    const l = dt.filter(x => isLoss(x)).length;
     const wr = (w + l > 0) ? (w / (w + l) * 100) : 0;
     const pnl = dt.reduce((s, t) => s + t.pnl, 0);
     return `<div class="breakdown-row">
@@ -2061,7 +2091,7 @@ function renderStats() {
   const recent30 = sorted.slice(-30);
   const stEl = document.getElementById('streak-tracker');
   stEl.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">
-    ${recent30.map(t => `<div class="streak-dot" style="background:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text3)'}" title="${t.date}: ${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}"></div>`).join('')}
+    ${recent30.map(t => `<div class="streak-dot" style="background:${isWin(t) ? 'var(--green)' : isLoss(t) ? 'var(--red)' : 'var(--text3)'}" title="${t.date}: ${t.pnl >= 0 ? '+$' : '-$'}${Math.abs(t.pnl).toFixed(2)}"></div>`).join('')}
   </div>
   <div style="font-size:12px;color:var(--text2)">
     <span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px"><span class="streak-dot" style="background:var(--green)"></span> Win</span>
@@ -2234,7 +2264,12 @@ function renderCalendar() {
         cls += ' has-trades';
         cls += info.pnl >= 5 ? ' win' : info.pnl <= -5 ? ' loss' : ' breakeven';
       }
-      const winRate = info ? (info.trades.filter(t => t.pnl >= 5).length / info.trades.length * 100) : 0;
+      let winRate = 0;
+      if (info) {
+        const dayWins = info.trades.filter(t => isWin(t)).length;
+        const dayLosses = info.trades.filter(t => isLoss(t)).length;
+        winRate = (dayWins + dayLosses) > 0 ? dayWins / (dayWins + dayLosses) * 100 : 0;
+      }
       return `<div class="${cls}" ${info ? `onclick="showDayDetail(${d})"` : ''}>
         ${isToday(d) ? `<div class="cal-today-dot"></div>` : `<div class="cal-day-num">${d}</div>`}
         ${info ? `
@@ -2305,7 +2340,7 @@ function showDayDetail(day) {
         <td>${t.symbol}</td>
         <td>${t.direction}</td>
         <td>${tagsDisplay}</td>
-        <td style="color:${t.pnl >= 5 ? 'var(--green)' : t.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">$${t.pnl.toFixed(2)}</td>
+        <td style="color:${isWin(t) ? 'var(--green)' : isLoss(t) ? 'var(--red)' : 'var(--text)'}">$${t.pnl.toFixed(2)}</td>
         <td>${t.r != null ? t.r.toFixed(2) + 'R' : '—'}</td>
       </tr>`}).join('')}</tbody>
     </table>
@@ -2370,8 +2405,8 @@ function renderBreakdownSetup(elId, tradeArr) {
   el.innerHTML = uniqueTags.map(tag => {
     const kt = tradeArr.filter(t => (t.setup||'').includes(tag));
     const pnl = kt.reduce((s, t) => s + t.pnl, 0);
-    const w = kt.filter(x => x.pnl >= 5).length;
-    const l = kt.filter(x => x.pnl <= -5).length;
+    const w = kt.filter(x => isWin(x)).length;
+    const l = kt.filter(x => isLoss(x)).length;
     const wr = (w + l > 0) ? (w / (w + l) * 100) : 0;
     const barWidth = maxPnl ? (Math.abs(pnl) / maxPnl * 100) : 0;
     return `<div class="breakdown-row">
@@ -2392,8 +2427,8 @@ function renderBreakdown(elId, field, label, tradeArr) {
   el.innerHTML = keys.map(k => {
     const kt = tradeArr.filter(t => t[field] === k);
     const pnl = kt.reduce((s, t) => s + t.pnl, 0);
-    const w = kt.filter(x => x.pnl >= 5).length;
-    const l = kt.filter(x => x.pnl <= -5).length;
+    const w = kt.filter(x => isWin(x)).length;
+    const l = kt.filter(x => isLoss(x)).length;
     const wr = (w + l > 0) ? (w / (w + l) * 100) : 0;
     const barWidth = maxPnl ? (Math.abs(pnl) / maxPnl * 100) : 0;
     return `<div class="breakdown-row">
@@ -2418,7 +2453,7 @@ function buildContext() {
   const setupStats = uniqueTags.map(tag => {
     const t = tradeArr.filter(x => (x.setup||'').includes(tag));
     const pnl = t.reduce((sum, x) => sum + x.pnl, 0);
-    const w = t.filter(x => x.pnl >= 5).length, l = t.filter(x => x.pnl <= -5).length;
+    const w = t.filter(x => isWin(x)).length, l = t.filter(x => isLoss(x)).length;
     const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
     return `${tag}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)} total`;
   });
@@ -2428,7 +2463,7 @@ function buildContext() {
     const t = tradeArr.filter(x => x.session === sess);
     if (!t.length) return null;
     const pnl = t.reduce((sum, x) => sum + x.pnl, 0);
-    const w = t.filter(x => x.pnl >= 5).length, l = t.filter(x => x.pnl <= -5).length;
+    const w = t.filter(x => isWin(x)).length, l = t.filter(x => isLoss(x)).length;
     const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
     return `${sess}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)} total`;
   }).filter(Boolean);
@@ -2447,7 +2482,7 @@ function buildContext() {
       const bt = timedTrades.filter(t => { const m = timeToMinutes(t.entryTime); return m >= b.min && m < b.max; });
       if (!bt.length) return null;
       const pnl = bt.reduce((s, x) => s + x.pnl, 0);
-      const w = bt.filter(x => x.pnl >= 5).length, l = bt.filter(x => x.pnl <= -5).length;
+      const w = bt.filter(x => isWin(x)).length, l = bt.filter(x => isLoss(x)).length;
       const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
       return `${b.label}: ${bt.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
     }).filter(Boolean).join('\n') || 'No entry times logged.';
@@ -2465,7 +2500,7 @@ function buildContext() {
       const bt = durTrades.filter(t => t.durationMin >= b.min && t.durationMin < b.max);
       if (!bt.length) return null;
       const pnl = bt.reduce((s, x) => s + x.pnl, 0);
-      const w = bt.filter(x => x.pnl >= 5).length, l = bt.filter(x => x.pnl <= -5).length;
+      const w = bt.filter(x => isWin(x)).length, l = bt.filter(x => isLoss(x)).length;
       const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
       return `${b.label}: ${bt.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
     }).filter(Boolean).join('\n') || 'No trade durations logged.';
@@ -2498,7 +2533,7 @@ HTF BIAS PERFORMANCE
 ${[...new Set(tradeArr.map(t => t.htfBias).filter(Boolean))].map(b => {
     const t = tradeArr.filter(x => x.htfBias === b);
     const pnl = t.reduce((s, x) => s + x.pnl, 0);
-    const w = t.filter(x => x.pnl >= 5).length, l = t.filter(x => x.pnl <= -5).length;
+    const w = t.filter(x => isWin(x)).length, l = t.filter(x => isLoss(x)).length;
     const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
     return `${b}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
   }).join('\n') || 'No HTF bias data.'}
@@ -2592,6 +2627,7 @@ function loadSettings() {
   document.getElementById('api-key-input').value = localStorage.getItem('bt_api_key') || '';
   document.getElementById('imgbb-key-input').value = localStorage.getItem('bt_imgbb_key') || '';
   document.getElementById('default-contracts').value = settings.defaultContracts || 1;
+  document.getElementById('breakeven-r-input').value = (settings.breakevenR != null && !isNaN(settings.breakevenR)) ? settings.breakevenR : 0.15;
   document.getElementById('auto-backup-toggle').checked = settings.autoBackup || false;
 }
 
@@ -2603,9 +2639,12 @@ function saveSettings() {
   if (imgbbKey) localStorage.setItem('bt_imgbb_key', imgbbKey); else localStorage.removeItem('bt_imgbb_key');
 
   settings.defaultContracts = parseInt(document.getElementById('default-contracts').value) || 1;
+  const bR = parseFloat(document.getElementById('breakeven-r-input').value);
+  settings.breakevenR = isNaN(bR) || bR < 0 ? 0.15 : bR;
   settings.autoBackup = document.getElementById('auto-backup-toggle').checked;
   localStorage.setItem('bt_settings', JSON.stringify(settings));
   toast('Settings saved!');
+  renderDashboard();
 }
 
 function importData() { document.getElementById('import-file').click(); }
