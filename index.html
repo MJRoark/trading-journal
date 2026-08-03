@@ -278,18 +278,33 @@
   .breakdown-bar { height: 100%; border-radius: 3px; transition: width 0.4s; }
   .breakdown-stat { width: 80px; text-align: right; font-size: 12px; font-weight: 600; color: var(--text); flex-shrink: 0; }
 
-  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-  .cal-header { text-align: center; font-size: 10px; font-weight: 600; color: var(--text3); padding: 4px 0 8px; text-transform: uppercase; }
+  .cal-headers-row { display: flex; gap: 6px; }
+  .cal-header { flex: 1; text-align: center; font-size: 10px; font-weight: 600; color: var(--text3); padding: 4px 0 8px; text-transform: uppercase; }
+  .cal-header-spacer { flex: 0 0 130px; }
+  .cal-week-row { display: flex; gap: 6px; margin-top: 6px; }
   .cal-day {
-    aspect-ratio: 1; border-radius: var(--radius-sm); display: flex; flex-direction: column;
-    align-items: center; justify-content: center; font-size: 10px; border: 1px solid transparent; cursor: default; position: relative;
+    flex: 1; aspect-ratio: 1; border-radius: var(--radius-sm); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px; border: 1px solid transparent; cursor: default; position: relative; padding: 6px;
   }
   .cal-day.has-trades { border-color: var(--border); cursor: pointer; }
-  .cal-day.win { background: var(--green-dim); border-color: rgba(45,212,160,0.25); }
-  .cal-day.loss { background: var(--red-dim); border-color: rgba(240,97,106,0.25); }
+  .cal-day.win { background: rgba(45,212,160,0.16); border-color: rgba(45,212,160,0.35); }
+  .cal-day.loss { background: rgba(240,97,106,0.14); border-color: rgba(240,97,106,0.35); }
   .cal-day.breakeven { background: var(--bg3); border-color: var(--border); }
-  .cal-day-num { font-size: 10px; color: var(--text3); }
-  .cal-day-pnl { font-size: 10px; font-weight: 700; margin-top: 1px; }
+  .cal-day.has-trades:hover { filter: brightness(1.12); }
+  .cal-day-num { position: absolute; top: 6px; right: 8px; font-size: 10px; color: var(--text3); }
+  .cal-day.has-trades .cal-day-num { color: var(--text2); }
+  .cal-today-dot { position: absolute; top: 6px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--blue); }
+  .cal-day.has-trades .cal-today-dot { top: 6px; right: 8px; }
+  .cal-day-pnl { font-size: 15px; font-weight: 700; line-height: 1.2; }
+  .cal-day-count { font-size: 10px; color: var(--text2); }
+  .cal-day-winrate { font-size: 9.5px; color: var(--text3); }
+  .cal-week-card {
+    flex: 0 0 130px; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 10px 8px; text-align: center;
+  }
+  .cal-week-card-label { font-size: 11px; color: var(--text2); font-weight: 600; }
+  .cal-week-card-total { font-size: 17px; font-weight: 700; }
+  .cal-week-card-days { font-size: 10.5px; padding: 2px 9px; border-radius: 100px; background: rgba(139,124,246,0.18); color: #b9adfa; }
 
   .screenshot-preview { width: 100%; max-height: 120px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-top: 6px; cursor: pointer; transition: opacity 0.2s; }
   .screenshot-preview:hover { opacity: 0.8; }
@@ -504,24 +519,24 @@
   <div class="page" id="page-calendar">
     <div class="card">
       <div class="card-header">
-        <div class="card-title" id="cal-month-label">Month</div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost" style="padding:6px 12px" onclick="calPrev()">‹</button>
-          <button class="btn btn-ghost" style="padding:6px 12px" onclick="calNext()">›</button>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="card-title" id="cal-month-label">Month</div>
+          <button class="btn btn-ghost" style="padding:6px 12px" onclick="calThisMonth()">This month</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px">
+          <div id="cal-monthly-stats" style="font-size:12.5px;color:var(--text2)"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" style="padding:6px 12px" onclick="calPrev()">‹</button>
+            <button class="btn btn-ghost" style="padding:6px 12px" onclick="calNext()">›</button>
+          </div>
         </div>
       </div>
-      <div class="calendar-grid" id="cal-headers"></div>
-      <div class="calendar-grid" id="cal-days" style="margin-top:4px"></div>
+      <div class="cal-headers-row" id="cal-headers"></div>
+      <div id="cal-days"></div>
     </div>
-    <div class="two-col">
-      <div class="card">
-        <div class="card-header"><div class="card-title">Weekly Summary</div></div>
-        <div id="weekly-summary"></div>
-      </div>
-      <div class="card">
-        <div class="card-header"><div class="card-title">Best / Worst Days</div></div>
-        <div id="best-worst"></div>
-      </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Best / Worst Days</div></div>
+      <div id="best-worst"></div>
     </div>
   </div>
 
@@ -2160,14 +2175,33 @@ function updateROptDisplay(val) {
 
 function setROptSlider(r) { document.getElementById('r-opt-slider').value = r; updateROptDisplay(r); }
 
+function fmtCompactMoney(v) {
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if (abs < 1000) return sign + '$' + abs.toFixed(0);
+  let s = (abs / 1000).toPrecision(3);
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return sign + '$' + s + 'K';
+}
+
+function calThisMonth() {
+  const now = new Date();
+  calYear = now.getFullYear();
+  calMonth = now.getMonth();
+  renderCalendar();
+}
+
 function renderCalendar() {
   const tradeArr = getFilteredTrades();
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('cal-month-label').textContent = months[calMonth] + ' ' + calYear;
 
   const headers = document.getElementById('cal-headers');
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  headers.innerHTML = days.map(d => `<div class="cal-header">${d}</div>`).join('');
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  headers.innerHTML = dayNames.map(d => `<div class="cal-header">${d}</div>`).join('') + '<div class="cal-header-spacer"></div>';
+
+  const today = new Date();
+  const isToday = d => today.getFullYear() === calYear && today.getMonth() === calMonth && today.getDate() === d;
 
   const firstDay = new Date(calYear, calMonth, 1).getDay();
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
@@ -2182,37 +2216,53 @@ function renderCalendar() {
     }
   });
 
-  const calEl = document.getElementById('cal-days');
-  let html = Array(firstDay).fill(`<div></div>`).join('');
-  for (let d = 1; d <= daysInMonth; d++) {
-    const info = dayMap[d];
-    let cls = 'cal-day';
-    if (info) {
-      cls += ' has-trades';
-      cls += info.pnl >= 5 ? ' win' : info.pnl <= -5 ? ' loss' : ' breakeven';
-    }
-    html += `<div class="${cls}" ${info ? `onclick="showDayDetail(${d})"` : ''}>
-      <div class="cal-day-num">${d}</div>
-      ${info ? `<div class="cal-day-pnl" style="color:${info.pnl >= 5 ? 'var(--green)' : info.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${info.pnl >= 0 ? '+' : ''}${info.pnl.toFixed(0)}</div>` : ''}
-    </div>`;
-  }
-  calEl.innerHTML = html;
+  // Build a 7-wide cell array (nulls for blanks before/after the month), then chunk into weeks
+  const cells = Array(firstDay).fill(null).concat(
+    Array.from({ length: daysInMonth }, (_, i) => i + 1)
+  );
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
-  const weeks = [[], [], [], [], []];
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dow = new Date(calYear, calMonth, d).getDay();
-    const wk = Math.floor((firstDay + d - 1) / 7);
-    if (dayMap[d]) weeks[wk].push(dayMap[d].pnl);
-  }
-  const wkEl = document.getElementById('weekly-summary');
-  wkEl.innerHTML = weeks.filter(w => w.length).map((w, i) => {
-    const total = w.reduce((s, v) => s + v, 0);
-    return `<div class="breakdown-row">
-      <div class="breakdown-label">Week ${i + 1}</div>
-      <div class="breakdown-bar-bg"><div class="breakdown-bar" style="width:${Math.min(100, Math.abs(total) / 50 * 100)}%;background:${total >= 0 ? 'var(--green)' : 'var(--red)'}"></div></div>
-      <div class="breakdown-stat" style="color:${total >= 0 ? 'var(--green)' : 'var(--red)'}">${total >= 0 ? '+$' : '-$'}${Math.abs(total).toFixed(2)}</div>
-    </div>`;
-  }).join('') || '<div class="empty-state"><p>No trades this month.</p></div>';
+  const calEl = document.getElementById('cal-days');
+  calEl.innerHTML = weeks.map((week, wi) => {
+    const dayCellsHtml = week.map(d => {
+      if (!d) return `<div class="cal-day"></div>`;
+      const info = dayMap[d];
+      let cls = 'cal-day';
+      if (info) {
+        cls += ' has-trades';
+        cls += info.pnl >= 5 ? ' win' : info.pnl <= -5 ? ' loss' : ' breakeven';
+      }
+      const winRate = info ? (info.trades.filter(t => t.pnl >= 5).length / info.trades.length * 100) : 0;
+      return `<div class="${cls}" ${info ? `onclick="showDayDetail(${d})"` : ''}>
+        ${isToday(d) ? `<div class="cal-today-dot"></div>` : `<div class="cal-day-num">${d}</div>`}
+        ${info ? `
+          <div class="cal-day-pnl" style="color:${info.pnl >= 5 ? 'var(--green)' : info.pnl <= -5 ? 'var(--red)' : 'var(--text)'}">${fmtCompactMoney(info.pnl)}</div>
+          <div class="cal-day-count">${info.trades.length} trade${info.trades.length !== 1 ? 's' : ''}</div>
+          <div class="cal-day-winrate">${winRate.toFixed(1)}%</div>
+        ` : ''}
+      </div>`;
+    }).join('');
+
+    const weekPnls = week.filter(d => d && dayMap[d]).map(d => dayMap[d].pnl);
+    const weekDaysTraded = weekPnls.length;
+    const weekTotal = weekPnls.reduce((s, v) => s + v, 0);
+    const weekCardHtml = weekDaysTraded ? `
+      <div class="cal-week-card">
+        <div class="cal-week-card-label">Week ${wi + 1}</div>
+        <div class="cal-week-card-total" style="color:${weekTotal >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtCompactMoney(weekTotal)}</div>
+        <div class="cal-week-card-days">${weekDaysTraded} day${weekDaysTraded !== 1 ? 's' : ''}</div>
+      </div>` : `<div class="cal-week-card" style="opacity:0.35"><div class="cal-week-card-label">Week ${wi + 1}</div></div>`;
+
+    return `<div class="cal-week-row">${dayCellsHtml}${weekCardHtml}</div>`;
+  }).join('');
+
+  const monthPnl = Object.values(dayMap).reduce((s, v) => s + v.pnl, 0);
+  const monthDaysTraded = Object.keys(dayMap).length;
+  document.getElementById('cal-monthly-stats').innerHTML = monthDaysTraded
+    ? `<strong>Monthly stats:</strong> <span style="color:${monthPnl >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${fmtCompactMoney(monthPnl)}</span> &nbsp; <span style="color:var(--text3)">${monthDaysTraded} day${monthDaysTraded !== 1 ? 's' : ''}</span>`
+    : '';
 
   const allDays = Object.entries(dayMap).map(([d, v]) => ({ day: d, pnl: v.pnl }));
   allDays.sort((a, b) => b.pnl - a.pnl);
