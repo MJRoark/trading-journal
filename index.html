@@ -882,12 +882,12 @@
       <div class="form-group" style="margin-bottom:16px">
         <label class="form-label">Claude API Key (for AI Coach)</label>
         <input type="password" class="form-input" id="api-key-input" placeholder="sk-ant-api03-...">
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Stored locally in your browser only. Never sent anywhere except Anthropic's API.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Synced to your account so it follows you across devices. Never sent anywhere except Anthropic's API.</div>
       </div>
       <div class="form-group" style="margin-bottom:16px">
         <label class="form-label">ImgBB API Key (for unlimited screenshots)</label>
         <input type="text" class="form-input" id="imgbb-key-input" placeholder="e.g., 5c4d6f8a9b...">
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Required to upload charts. Get a free key at api.imgbb.com.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Synced to your account. Required to upload charts — get a free key at api.imgbb.com.</div>
       </div>
       <div class="form-group" style="margin-bottom:24px">
         <label class="form-label">Default Contracts per Trade</label>
@@ -1380,7 +1380,7 @@ async function handleScreenshot(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  const imgbbKey = localStorage.getItem('bt_imgbb_key') || '';
+  const imgbbKey = settings.imgbbKey || '';
   if (!imgbbKey) {
     toast('Add your ImgBB API key in Settings first to upload images.', 'red');
     event.target.value = '';
@@ -1580,6 +1580,49 @@ async function deleteAllTradesFromDb() {
   return true;
 }
 
+// ─── SETTINGS SYNC ──────────────────────────────────────────────────────────────
+// Settings (breakeven threshold, default contracts, API keys, etc.) live in a
+// single Supabase row per user so they follow you across devices, the same way
+// trades do. localStorage is kept only as an offline fallback/cache.
+function settingsToRow(s) {
+  return {
+    default_contracts: s.defaultContracts || 1,
+    breakeven_r: (s.breakevenR != null && !isNaN(s.breakevenR)) ? s.breakevenR : 0.15,
+    auto_backup: !!s.autoBackup,
+    claude_api_key: s.claudeApiKey || null,
+    imgbb_key: s.imgbbKey || null,
+  };
+}
+
+function rowToSettings(row) {
+  return {
+    defaultContracts: row.default_contracts || 1,
+    breakevenR: (row.breakeven_r != null && !isNaN(row.breakeven_r)) ? row.breakeven_r : 0.15,
+    autoBackup: !!row.auto_backup,
+    claudeApiKey: row.claude_api_key || '',
+    imgbbKey: row.imgbb_key || '',
+  };
+}
+
+async function loadSettingsFromDb() {
+  const { data, error } = await sb.from('user_settings').select('*').maybeSingle();
+  if (error) {
+    toast('Could not load settings from the cloud, using last local copy.', 'red');
+    return;
+  }
+  if (data) {
+    settings = rowToSettings(data);
+    localStorage.setItem('bt_settings', JSON.stringify(settings));
+  }
+  // If no row exists yet, keep whatever's cached in localStorage (first-run / pre-migration state).
+}
+
+async function upsertSettingsToDb() {
+  const { error } = await sb.from('user_settings').upsert(settingsToRow(settings));
+  if (error) { toast('Settings sync failed: ' + error.message, 'red'); return false; }
+  return true;
+}
+
 // ─── AUTH ───────────────────────────────────────────────────────────────────────
 async function doLogin() {
   const email = document.getElementById('login-email').value.trim();
@@ -1603,6 +1646,7 @@ async function doLogout() {
 async function enterApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = 'flex';
+  await loadSettingsFromDb();
   await loadTradesFromDb();
   updateBtSessionDropdowns();
   updateSidebarCount();
@@ -2556,7 +2600,7 @@ async function sendAI() {
   const input = document.getElementById('ai-input');
   const msg = input.value.trim();
   if (!msg) return;
-  const key = localStorage.getItem('bt_api_key') || '';
+  const key = settings.claudeApiKey || '';
   if (!key) {
     toast('Add your Claude API key in Settings first.', 'red');
     nav('settings');
@@ -2624,26 +2668,26 @@ function copyReport() {
 }
 
 function loadSettings() {
-  document.getElementById('api-key-input').value = localStorage.getItem('bt_api_key') || '';
-  document.getElementById('imgbb-key-input').value = localStorage.getItem('bt_imgbb_key') || '';
+  document.getElementById('api-key-input').value = settings.claudeApiKey || '';
+  document.getElementById('imgbb-key-input').value = settings.imgbbKey || '';
   document.getElementById('default-contracts').value = settings.defaultContracts || 1;
   document.getElementById('breakeven-r-input').value = (settings.breakevenR != null && !isNaN(settings.breakevenR)) ? settings.breakevenR : 0.15;
   document.getElementById('auto-backup-toggle').checked = settings.autoBackup || false;
 }
 
-function saveSettings() {
-  const claudeKey = document.getElementById('api-key-input').value.trim();
-  const imgbbKey = document.getElementById('imgbb-key-input').value.trim();
-  
-  if (claudeKey) localStorage.setItem('bt_api_key', claudeKey); else localStorage.removeItem('bt_api_key');
-  if (imgbbKey) localStorage.setItem('bt_imgbb_key', imgbbKey); else localStorage.removeItem('bt_imgbb_key');
-
+async function saveSettings() {
+  settings.claudeApiKey = document.getElementById('api-key-input').value.trim();
+  settings.imgbbKey = document.getElementById('imgbb-key-input').value.trim();
   settings.defaultContracts = parseInt(document.getElementById('default-contracts').value) || 1;
   const bR = parseFloat(document.getElementById('breakeven-r-input').value);
   settings.breakevenR = isNaN(bR) || bR < 0 ? 0.15 : bR;
   settings.autoBackup = document.getElementById('auto-backup-toggle').checked;
+
+  const ok = await upsertSettingsToDb();
+  if (!ok) return;
+
   localStorage.setItem('bt_settings', JSON.stringify(settings));
-  toast('Settings saved!');
+  toast('Settings saved — synced to your account.');
   renderDashboard();
 }
 
