@@ -1739,8 +1739,8 @@ function renderTradeList() {
   let filtered = tradeArr.filter(t => {
     if (sym && t.symbol !== sym) return false;
     if (sess && t.session !== sess) return false;
-    if (res === 'win' && t.pnl < 5) return false; 
-    if (res === 'loss' && t.pnl > -5) return false; 
+    if (res === 'win' && !isWin(t)) return false; 
+    if (res === 'loss' && !isLoss(t)) return false; 
     if (res === 'breakeven' && (isWin(t) || isLoss(t))) return false; 
     if (q && !`${t.date} ${t.symbol} ${t.setup} ${t.notes}`.toLowerCase().includes(q)) return false;
     return true;
