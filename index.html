@@ -141,6 +141,21 @@
   .global-filter-select:focus {
     border-color: var(--blue);
   }
+  .global-filter-container { position: relative; }
+  .global-filter-select { text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .global-filter-select::after { content: '▾'; font-size: 10px; color: var(--text3); flex-shrink: 0; }
+  .session-dropdown-panel {
+    position: absolute; left: 14px; right: 14px; top: 100%; margin-top: 4px; z-index: 30;
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4); max-height: 260px; overflow-y: auto; padding: 6px;
+  }
+  .session-option {
+    display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px;
+    font-size: 12.5px; cursor: pointer; color: var(--text2);
+  }
+  .session-option:hover { background: var(--bg4); color: var(--text); }
+  .session-option input { cursor: pointer; }
+  .session-dropdown-divider { height: 1px; background: var(--border); margin: 4px 2px; }
 
   .nav-section { padding: 16px 10px 0; }
   .nav-label {
@@ -316,8 +331,16 @@
   .cal-week-card-total { font-size: 17px; font-weight: 700; }
   .cal-week-card-days { font-size: 10.5px; padding: 2px 9px; border-radius: 100px; background: rgba(139,124,246,0.18); color: #b9adfa; }
 
-  .screenshot-preview { width: 100%; max-height: 120px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-top: 6px; cursor: pointer; transition: opacity 0.2s; }
-  .screenshot-preview:hover { opacity: 0.8; }
+  .screenshot-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; margin-top: 8px; }
+  .screenshot-thumb { position: relative; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border); aspect-ratio: 1; }
+  .screenshot-thumb img { width: 100%; height: 100%; object-fit: cover; cursor: pointer; transition: opacity 0.2s; display: block; }
+  .screenshot-thumb img:hover { opacity: 0.8; }
+  .screenshot-thumb .remove-btn {
+    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%;
+    background: rgba(0,0,0,0.65); color: #fff; border: none; font-size: 12px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .screenshot-thumb .remove-btn:hover { background: var(--red); }
 
   .lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); z-index: 99999; display: none; align-items: center; justify-content: center; }
   .lightbox-overlay.open { display: flex; }
@@ -425,9 +448,14 @@
 <nav id="sidebar">
   <div class="logo">📈 <span>BackTest</span>Journal</div>
   <div class="global-filter-container">
-    <select class="global-filter-select" id="global-session-filter" onchange="changeGlobalSession()">
-      <option value="">All Backtest Sessions</option>
-    </select>
+    <button type="button" class="global-filter-select" id="global-session-btn" onclick="toggleSessionDropdown(event)">All Backtest Sessions</button>
+    <div class="session-dropdown-panel" id="session-dropdown-panel" style="display:none">
+      <label class="session-option">
+        <input type="checkbox" id="session-opt-all" onchange="toggleAllSessionsOption()"> <span>All Sessions</span>
+      </label>
+      <div class="session-dropdown-divider"></div>
+      <div id="session-options-list"></div>
+    </div>
   </div>
   <div class="nav-section">
     <div class="nav-label">Overview</div>
@@ -791,13 +819,16 @@
         </div>
 
         <div class="form-group full">
-          <label class="form-label" style="margin-bottom:0">Chart Image</label>
-          <input type="url" class="form-input" id="f-tv-link" placeholder="Paste direct image link (TradingView, Gyazo, etc.)" style="margin-bottom:8px">
-          <div class="upload-zone" id="upload-zone-ui" onclick="document.getElementById('f-screenshot').click()">
-            📷 Or click to upload an image from your device
+          <label class="form-label" style="margin-bottom:0">Chart Images</label>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <input type="url" class="form-input" id="f-tv-link" placeholder="Paste direct image link (TradingView, Gyazo, etc.)" onkeydown="if(event.key==='Enter'){event.preventDefault();addScreenshotLink();}">
+            <button type="button" class="btn btn-ghost" style="flex-shrink:0" onclick="addScreenshotLink()">Add Link</button>
           </div>
-          <input type="file" id="f-screenshot" accept="image/*" style="display:none" onchange="handleScreenshot(event)">
-          <img id="screenshot-preview" class="screenshot-preview" style="display:none">
+          <div class="upload-zone" id="upload-zone-ui" onclick="document.getElementById('f-screenshot').click()">
+            📷 Or click to upload image(s) from your device
+          </div>
+          <input type="file" id="f-screenshot" accept="image/*" multiple style="display:none" onchange="handleScreenshot(event)">
+          <div id="screenshot-gallery" class="screenshot-gallery"></div>
         </div>
 
         <div class="form-group full" style="display:flex;gap:10px;margin-top:8px">
@@ -1019,9 +1050,9 @@ let editingId = null;
 let selectedDir = null;
 let selectedConviction = null;
 let selectedProcess = null;
-let screenshotData = null;
+let screenshotList = [];
 let currentTradeList = [];
-let currentGlobalSession = ''; 
+let currentGlobalSessions = []; 
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
 let aiHistory = [];
@@ -1170,12 +1201,15 @@ function sortTradesDesc(arr) {
 }
 
 function getFilteredTrades() {
-  if (!currentGlobalSession) return trades;
-  return trades.filter(t => t.backtestSession === currentGlobalSession);
+  if (!currentGlobalSessions.length) return trades;
+  return trades.filter(t => currentGlobalSessions.includes(t.backtestSession));
 }
 
-function changeGlobalSession() {
-  currentGlobalSession = document.getElementById('global-session-filter').value;
+function escAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function onGlobalSessionChange() {
   updateSidebarCount();
   const activePage = document.querySelector('.page.active').id.replace('page-', '');
   if (activePage === 'dashboard') renderDashboard();
@@ -1185,15 +1219,54 @@ function changeGlobalSession() {
   if (activePage === 'breakdown') renderBreakdowns();
 }
 
+function toggleSessionDropdown(event) {
+  if (event) event.stopPropagation();
+  const panel = document.getElementById('session-dropdown-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleAllSessionsOption() {
+  currentGlobalSessions = [];
+  refreshSessionFilterUI();
+  onGlobalSessionChange();
+}
+
+function toggleSessionOption(session) {
+  const idx = currentGlobalSessions.indexOf(session);
+  if (idx >= 0) currentGlobalSessions.splice(idx, 1); else currentGlobalSessions.push(session);
+  refreshSessionFilterUI();
+  onGlobalSessionChange();
+}
+
+function refreshSessionFilterUI() {
+  const sessions = AC_OPTIONS.btSession;
+  const listEl = document.getElementById('session-options-list');
+  listEl.innerHTML = sessions.map(s => `
+    <label class="session-option">
+      <input type="checkbox" ${currentGlobalSessions.includes(s) ? 'checked' : ''} onchange="toggleSessionOption('${escAttr(s)}')"> <span>${escAttr(s)}</span>
+    </label>
+  `).join('');
+  document.getElementById('session-opt-all').checked = currentGlobalSessions.length === 0;
+
+  const btn = document.getElementById('global-session-btn');
+  if (!currentGlobalSessions.length) btn.textContent = 'All Backtest Sessions';
+  else if (currentGlobalSessions.length === 1) btn.textContent = currentGlobalSessions[0];
+  else btn.textContent = `${currentGlobalSessions.length} sessions selected`;
+}
+
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('session-dropdown-panel');
+  const container = document.querySelector('.global-filter-container');
+  if (panel && panel.style.display !== 'none' && container && !container.contains(e.target)) {
+    panel.style.display = 'none';
+  }
+});
+
 function updateBtSessionDropdowns() {
   const sessions = [...new Set(trades.map(t => t.backtestSession).filter(Boolean))].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   AC_OPTIONS.btSession = sessions;
-  
-  const sidebarSel = document.getElementById('global-session-filter');
-  const currentVal = currentGlobalSession;
-  sidebarSel.innerHTML = '<option value="">All Backtest Sessions</option>' + sessions.map(s => `<option value="${s}">${s}</option>`).join('');
-  if (sessions.includes(currentVal)) { sidebarSel.value = currentVal; } 
-  else { currentGlobalSession = ''; sidebarSel.value = ''; }
+  currentGlobalSessions = currentGlobalSessions.filter(s => sessions.includes(s));
+  refreshSessionFilterUI();
 }
 
 function computeDuration(entryTime, exitTime) {
@@ -1327,7 +1400,7 @@ function resetForm() {
   selectedDir = null;
   selectedConviction = null;
   selectedProcess = null;
-  screenshotData = null;
+  screenshotList = [];
   document.getElementById('form-mode-label').textContent = 'New Trade';
   
   document.getElementById('f-bt-session').value = settings.lastBtSession || 'Default Session';
@@ -1346,7 +1419,7 @@ function resetForm() {
   document.getElementById('f-mfe').value = '';
   document.getElementById('f-notes').value = '';
   document.getElementById('f-tv-link').value = '';
-  document.getElementById('screenshot-preview').style.display = 'none';
+  renderScreenshotGallery();
   document.getElementById('f-screenshot').value = '';
   
   ['f-internal','f-volatility','f-proximity','f-quartile','f-failure','f-outcome','f-thesis'].forEach(id => {
@@ -1447,8 +1520,8 @@ function updateCalc() {
 }
 
 async function handleScreenshot(event) {
-  const file = event.target.files[0];
-  if (!file) return;
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
 
   const imgbbKey = settings.imgbbKey || '';
   if (!imgbbKey) {
@@ -1458,33 +1531,56 @@ async function handleScreenshot(event) {
   }
 
   const uploadZone = document.getElementById('upload-zone-ui');
-  uploadZone.textContent = '⏳ Uploading to ImgBB...';
+  let uploaded = 0, failed = 0;
 
-  const formData = new FormData();
-  formData.append('image', file);
-
-  try {
-    const res = await fetch('https://api.imgbb.com/1/upload?key=' + imgbbKey, {
-      method: 'POST',
-      body: formData
-    });
-    const data = await res.json();
-    
-    if (data.success) {
-      screenshotData = data.data.url;
-      const prev = document.getElementById('screenshot-preview');
-      prev.src = screenshotData;
-      prev.style.display = 'block';
-      toast('Screenshot uploaded!');
-    } else {
-      toast('Upload failed: ' + data.error.message, 'red');
+  for (const file of files) {
+    uploadZone.textContent = `⏳ Uploading ${uploaded + failed + 1} of ${files.length}...`;
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      const res = await fetch('https://api.imgbb.com/1/upload?key=' + imgbbKey, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.success) {
+        screenshotList.push(data.data.url);
+        uploaded++;
+        renderScreenshotGallery();
+      } else {
+        failed++;
+        toast('Upload failed: ' + data.error.message, 'red');
+      }
+    } catch (e) {
+      failed++;
+      toast('Error connecting to ImgBB API.', 'red');
     }
-  } catch (e) {
-    toast('Error connecting to ImgBB API.', 'red');
-  } finally {
-    uploadZone.textContent = '📷 Click to upload an image from your device';
-    event.target.value = ''; 
   }
+
+  uploadZone.textContent = '📷 Or click to upload image(s) from your device';
+  event.target.value = '';
+  if (uploaded) toast(`${uploaded} screenshot${uploaded !== 1 ? 's' : ''} uploaded!`);
+}
+
+function addScreenshotLink() {
+  const input = document.getElementById('f-tv-link');
+  const url = input.value.trim();
+  if (!url) return;
+  screenshotList.push(url);
+  input.value = '';
+  renderScreenshotGallery();
+}
+
+function removeScreenshot(index) {
+  screenshotList.splice(index, 1);
+  renderScreenshotGallery();
+}
+
+function renderScreenshotGallery() {
+  const gallery = document.getElementById('screenshot-gallery');
+  gallery.innerHTML = screenshotList.map((url, i) => `
+    <div class="screenshot-thumb">
+      <img src="${url}" onclick="openLightbox('${url}')" title="Click to view full size">
+      <button type="button" class="remove-btn" onclick="removeScreenshot(${i})" title="Remove">✕</button>
+    </div>
+  `).join('');
 }
 
 async function saveTrade() {
@@ -1518,8 +1614,10 @@ async function saveTrade() {
   const mfeR = (mfePoints != null && slPoints && slPoints > 0) ? mfePoints / slPoints : null;
   const durationMin = computeDuration(entryTime, exitTime);
   
-  const tvLink = document.getElementById('f-tv-link').value.trim();
-  const finalImage = tvLink || screenshotData || null;
+  // If the user typed a link but forgot to click "Add Link", include it automatically.
+  const pendingLink = document.getElementById('f-tv-link').value.trim();
+  if (pendingLink) { screenshotList.push(pendingLink); document.getElementById('f-tv-link').value = ''; renderScreenshotGallery(); }
+  const finalScreenshots = [...screenshotList];
 
   const trade = {
     id: editingId || Date.now().toString(),
@@ -1553,7 +1651,7 @@ async function saveTrade() {
     outcome: document.getElementById('f-outcome').value.trim(),
     thesisClarity: document.getElementById('f-thesis').value.trim(),
     notes: document.getElementById('f-notes').value.trim(),
-    screenshot: finalImage,
+    screenshots: finalScreenshots,
     timestamp: editingId ? (trades.find(t => t.id === editingId)?.timestamp || Date.now()) : Date.now(),
   };
 
@@ -1596,12 +1694,14 @@ function tradeToRow(t) {
     duration_min: t.durationMin, conviction: t.conviction, process_quality: t.processQuality,
     internal_state: t.internalState, volatility: t.volatility, proximity: t.proximity,
     quartile: t.quartile, failure_mode: t.failureMode, outcome: t.outcome,
-    thesis_clarity: t.thesisClarity, notes: t.notes, screenshot: t.screenshot,
+    thesis_clarity: t.thesisClarity, notes: t.notes, screenshots: t.screenshots || [],
     timestamp: t.timestamp,
   };
 }
 
 function rowToTrade(row) {
+  // Falls back to the old single `screenshot` column for any row saved before this update.
+  const screenshots = (row.screenshots && row.screenshots.length) ? row.screenshots : (row.screenshot ? [row.screenshot] : []);
   return {
     id: row.id, backtestSession: row.backtest_session, date: row.date, symbol: row.symbol,
     direction: row.direction, session: row.session, htfBias: row.htf_bias, setup: row.setup,
@@ -1611,7 +1711,7 @@ function rowToTrade(row) {
     durationMin: row.duration_min, conviction: row.conviction, processQuality: row.process_quality,
     internalState: row.internal_state, volatility: row.volatility, proximity: row.proximity,
     quartile: row.quartile, failureMode: row.failure_mode, outcome: row.outcome,
-    thesisClarity: row.thesis_clarity, notes: row.notes, screenshot: row.screenshot,
+    thesisClarity: row.thesis_clarity, notes: row.notes, screenshots,
     timestamp: row.timestamp,
   };
 }
@@ -1865,7 +1965,7 @@ function openTrade(id) {
       <tr><td style="color:var(--text3);padding:5px 0">Process & Conv.</td><td>${t.processQuality||'—'} / ${t.conviction || t.discipline || '—'}</td></tr>
     </table>
     ${t.notes ? `<div style="background:var(--bg3);border-radius:8px;padding:12px;font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">${t.notes}</div>` : ''}
-    ${t.screenshot ? `<img src="${t.screenshot}" onclick="openLightbox('${t.screenshot}')" title="Click to view full size" style="width:100%;border-radius:8px;border:1px solid var(--border);margin-bottom:12px;cursor:zoom-in">` : ''}
+    ${(t.screenshots && t.screenshots.length) ? `<div class="screenshot-gallery" style="margin-bottom:12px">${t.screenshots.map(url => `<div class="screenshot-thumb" style="aspect-ratio:auto;height:120px"><img src="${url}" onclick="openLightbox('${url}')" title="Click to view full size" style="border-radius:8px"></div>`).join('')}</div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
       <div>
         <button class="btn btn-ghost" onclick="openTrade('${olderId}')" ${!olderId ? 'disabled' : ''}>← Older</button>
@@ -1949,17 +2049,9 @@ function populateFormFromTrade(t) {
   document.getElementById('f-sl-points').value = t.slPoints || (t.stop ? Math.abs(t.entry - t.stop) : '');
   document.getElementById('f-tp-points').value = t.tpPoints || '';
   
-  if(t.screenshot && t.screenshot.includes('tradingview.com')) {
-      document.getElementById('f-tv-link').value = t.screenshot;
-      screenshotData = null; 
-      document.getElementById('screenshot-preview').style.display = 'none';
-  } else if (t.screenshot) {
-      document.getElementById('f-tv-link').value = '';
-      screenshotData = t.screenshot;
-      const prev = document.getElementById('screenshot-preview');
-      prev.src = t.screenshot;
-      prev.style.display = 'block';
-  }
+  document.getElementById('f-tv-link').value = '';
+  screenshotList = (t.screenshots && t.screenshots.length) ? [...t.screenshots] : (t.screenshot ? [t.screenshot] : []);
+  renderScreenshotGallery();
 
   setDir(t.direction);
   if (t.conviction || t.discipline) setConviction(t.conviction || t.discipline);
