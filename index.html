@@ -1792,6 +1792,7 @@ function renderTradeList() {
             <td>${t.processQuality || '—'}</td>
             <td style="white-space:nowrap">
               <button class="btn btn-ghost" style="padding:4px 8px;font-size:11px" onclick="editTrade('${t.id}');event.stopPropagation()">Edit</button>
+              <button class="btn btn-ghost" style="padding:4px 8px;font-size:11px;margin-left:4px" onclick="duplicateTrade('${t.id}');event.stopPropagation()">Dup</button>
               <button class="btn btn-danger" style="padding:4px 8px;font-size:11px;margin-left:4px" onclick="deleteTrade('${t.id}');event.stopPropagation()">Del</button>
             </td>
           </tr>
@@ -1872,6 +1873,7 @@ function openTrade(id) {
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" onclick="editTrade('${t.id}');closeModal()">Edit</button>
+        <button class="btn btn-ghost" onclick="duplicateTrade('${t.id}');closeModal()">Duplicate</button>
         <button class="btn btn-danger" onclick="deleteTrade('${t.id}');closeModal()">Delete</button>
       </div>
     </div>
@@ -1903,7 +1905,20 @@ function editTrade(id) {
   editingId = id;
   nav('log');
   document.getElementById('form-mode-label').textContent = 'Edit Trade';
-  
+  populateFormFromTrade(t);
+}
+
+function duplicateTrade(id) {
+  const t = trades.find(t => t.id === id);
+  if (!t) return;
+  editingId = null; // saving this will create a brand new trade, not overwrite the original
+  nav('log');
+  document.getElementById('form-mode-label').textContent = 'Duplicate Trade';
+  populateFormFromTrade(t);
+  toast('Trade duplicated — change the session (or anything else) and save.');
+}
+
+function populateFormFromTrade(t) {
   document.getElementById('f-bt-session').value = t.backtestSession || 'Default Session';
   document.getElementById('f-date').value = t.date;
   document.getElementById('f-symbol').value = t.symbol;
@@ -2045,7 +2060,7 @@ function renderDashCharts(tradeArr) {
 
   const wins = tradeArr.filter(t => isWin(t)).length;
   const losses = tradeArr.filter(t => isLoss(t)).length;
-  const be = tradeArr.filter(t => t.pnl > -5 && t.pnl < 5).length;
+  const be = tradeArr.filter(t => classifyTrade(t) === 'breakeven').length;
   if (winLossChartInst) winLossChartInst.destroy();
   const wlCtx = document.getElementById('winLossChart').getContext('2d');
   winLossChartInst = new Chart(wlCtx, {
