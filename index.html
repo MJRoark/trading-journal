@@ -338,9 +338,27 @@
   .screenshot-thumb .remove-btn {
     position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%;
     background: rgba(0,0,0,0.65); color: #fff; border: none; font-size: 12px; line-height: 1;
-    cursor: flex; align-items: center; justify-content: center;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
   .screenshot-thumb .remove-btn:hover { background: var(--red); }
+
+  .scale-toggle-btn {
+    font-size: 10.5px; padding: 3px 8px; border-radius: 100px; border: 1px solid var(--border2);
+    background: var(--bg3); color: var(--text3); cursor: pointer; white-space: nowrap;
+  }
+  .scale-toggle-btn:hover { border-color: var(--blue); color: var(--blue); }
+  .scale-toggle-btn.active { border-color: var(--blue); color: var(--blue); background: rgba(91,156,246,0.12); }
+  .fill-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .fill-row input { flex: 1; min-width: 0; }
+  .fill-row .fill-qty { flex: 0 0 70px; }
+  .fill-row .fill-remove {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border2);
+    background: var(--bg3); color: var(--text3); cursor: pointer; font-size: 12px;
+  }
+  .fill-row .fill-remove:hover { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+  .fill-add-btn { font-size: 11px; padding: 5px 10px; margin-top: 2px; }
+  .fill-total-note { font-size: 11px; color: var(--text3); margin-top: 6px; }
+  .fill-error-note { font-size: 11px; color: var(--red); margin-top: 6px; }
 
   .lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); z-index: 99999; display: none; align-items: center; justify-content: center; }
   .lightbox-overlay.open { display: flex; }
@@ -348,7 +366,7 @@
   .lightbox-close { position: absolute; top: 20px; right: 30px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 100px; font-weight: 600; cursor: pointer; transition: 0.15s; }
   .lightbox-close:hover { background: var(--bg4); }
 
-  .report-box { background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius); padding: 18px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; color: var(--text2); white-space: pre-wrap; max-height: 550px; overflow-y: auto; }
+  .report-box { background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius); padding: 16px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; color: var(--text2); white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
   
   .pill-row { display: flex; gap: 6px; flex-wrap: wrap; }
   .pill { padding: 4px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; background: var(--bg3); border: 1px solid var(--border); color: var(--text2); cursor: pointer; transition: all 0.15s; }
@@ -683,12 +701,28 @@
         </div>
         
         <div class="form-group">
-          <label class="form-label">Entry Price</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <label class="form-label" style="margin-bottom:0">Entry Price</label>
+            <button type="button" class="scale-toggle-btn" id="entry-scale-toggle" onclick="toggleScaled('entry')" title="Log this trade as multiple entry fills at different prices">+ Scale</button>
+          </div>
           <input type="number" step="0.25" class="form-input" id="f-entry" placeholder="0.00">
+          <div id="entry-fills-block" style="display:none;margin-top:8px">
+            <div id="entry-fills-rows"></div>
+            <button type="button" class="btn btn-ghost fill-add-btn" onclick="addFillRow('entry')">+ Add Fill</button>
+            <div id="entry-fills-note" class="fill-total-note"></div>
+          </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Exit Price</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <label class="form-label" style="margin-bottom:0">Exit Price</label>
+            <button type="button" class="scale-toggle-btn" id="exit-scale-toggle" onclick="toggleScaled('exit')" title="Log this trade as multiple partial exits (scaling out)">+ Scale</button>
+          </div>
           <input type="number" step="0.25" class="form-input" id="f-exit" placeholder="0.00">
+          <div id="exit-fills-block" style="display:none;margin-top:8px">
+            <div id="exit-fills-rows"></div>
+            <button type="button" class="btn btn-ghost fill-add-btn" onclick="addFillRow('exit')">+ Add Fill</button>
+            <div id="exit-fills-note" class="fill-total-note"></div>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Initial Target (Points)</label>
@@ -699,7 +733,7 @@
           <input type="number" step="0.25" class="form-input" id="f-sl-points" placeholder="e.g. 5">
         </div>
         <div class="form-group">
-          <label class="form-label">Contracts</label>
+          <label class="form-label" id="contracts-label">Contracts</label>
           <input type="number" class="form-input" id="f-contracts" value="1" min="1">
         </div>
         <div class="form-group">
@@ -914,12 +948,11 @@
       </div>
       <div style="margin-bottom:14px">
         <div class="pill-row">
-          <div class="pill" onclick="sendQuick('Analyze my exit efficiency and MFE. How much profit am I leaving on the table?')">Exit & MFE analysis</div>
-          <div class="pill" onclick="sendQuick('Analyze my biggest blindspots and failure modes across all trades.')">Blindspot analysis</div>
-          <div class="pill" onclick="sendQuick('Which setup tag has the best statistical edge? Where am I losing money?')">Best setups</div>
-          <div class="pill" onclick="sendQuick('What session or time block should I avoid trading and why?')">Session analysis</div>
-          <div class="pill" onclick="sendQuick('How does my process rating (A-D) correlate with my actual R return?')">Process vs R</div>
-          <div class="pill" onclick="sendQuick('Give me 3 specific, rules-based improvements to implement right now.')">Top improvements</div>
+          <div class="pill" onclick="sendQuick('Analyze my biggest blindspots based on my trade data.')">Blindspot analysis</div>
+          <div class="pill" onclick="sendQuick('Which setup tag has the best edge? Where am I losing money?')">Best setups</div>
+          <div class="pill" onclick="sendQuick('What session should I avoid trading and why?')">Session analysis</div>
+          <div class="pill" onclick="sendQuick('Does trading with FOMO actually hurt my performance in the data?')">Discipline impact</div>
+          <div class="pill" onclick="sendQuick('Give me 3 specific, actionable improvements to make right now.')">Improvements</div>
         </div>
       </div>
       <div class="ai-chat" id="ai-chat"></div>
@@ -928,19 +961,19 @@
         <button class="btn btn-primary" onclick="sendAI()">Send</button>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:8px">
-        The AI has access to your full trade log with MFE, execution, and psychology data. Shift+Enter for new line.
+        The AI has full access to your filtered trade data. Shift+Enter for new line.
       </div>
     </div>
   </div>
 
   <div class="page" id="page-export">
-    <div class="card" style="max-width:800px">
+    <div class="card" style="max-width:740px">
       <div class="card-header">
         <div class="card-title">Export AI Analysis Report</div>
         <button class="btn btn-primary" onclick="copyReport()">Copy to clipboard</button>
       </div>
       <p style="font-size:13px;color:var(--text2);margin-bottom:14px">
-        This prompt includes your complete aggregated statistics, MFE / exit efficiency analytics, and the full individual trade log for all currently filtered trades. Paste it into ChatGPT, Gemini, or Claude for deep institutional-grade review.
+        This is a pre-formatted prompt with all your currently filtered trade statistics. Paste it into any AI chat (ChatGPT, Gemini, Claude, etc.) for deep analysis.
       </p>
       <div class="report-box" id="report-output">Generate your report by clicking the button above, or log some trades first.</div>
       <div style="margin-top:14px;display:flex;gap:10px">
@@ -1020,6 +1053,10 @@ let trades = [];
 let settings = JSON.parse(localStorage.getItem('bt_settings') || '{}');
 
 // ─── WIN / LOSS / BREAKEVEN CLASSIFICATION ──────────────────────────────────────
+// A trade counts as breakeven if its R-multiple falls within ± the configured
+// threshold (default 0.15R), rather than using a flat dollar amount. This keeps
+// tiny scratches (e.g. +0.04R) out of the win-rate math. Falls back to a $5
+// dollar threshold only for old/edge-case trades with no R-multiple recorded.
 function getBreakevenR() {
   const v = parseFloat(settings.breakevenR);
   return isNaN(v) ? 0.15 : v;
@@ -1043,12 +1080,15 @@ function classifyTrade(t) { return classifyPnlR(t.pnl, t.r); }
 function isWin(t) { return classifyTrade(t) === 'win'; }
 function isLoss(t) { return classifyTrade(t) === 'loss'; }
 function resultColor(t) { const c = classifyTrade(t); return c === 'win' ? 'var(--green)' : c === 'loss' ? 'var(--red)' : 'var(--text)'; }
-
 let editingId = null;
 let selectedDir = null;
 let selectedConviction = null;
 let selectedProcess = null;
 let screenshotList = [];
+let entryFills = [];
+let exitFills = [];
+let entryScaled = false;
+let exitScaled = false;
 let currentTradeList = [];
 let currentGlobalSessions = []; 
 let calYear = new Date().getFullYear();
@@ -1118,6 +1158,7 @@ const AC_OPTIONS = {
 
 function timeToMinutes(t) {
   if (!t) return null;
+  // Robust parsing to handle both legacy 24h ("14:44") and new 12h formats ("2:44 PM")
   let isPM = t.toLowerCase().includes('p');
   let isAM = t.toLowerCase().includes('a');
   
@@ -1137,13 +1178,14 @@ function timeToMinutes(t) {
 }
 
 function minutesToTimeLabel(mins) {
-  if (mins === null || isNaN(mins)) return '';
+  if (mins === null) return '';
   const h = Math.floor(mins / 60), m = Math.round(mins % 60);
   let displayH = h % 12 || 12;
   let ampm = h >= 12 ? 'PM' : 'AM';
   return `${displayH}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+// Custom Smart Time Formatting - Outputs strictly 12h AM/PM
 function formatSmartTime(el) {
   let val = el.value.trim().toLowerCase();
   if (!val) return;
@@ -1186,6 +1228,7 @@ function getExecutionValue(t) {
 }
 
 function sortTradesDesc(arr) {
+  // Master sort: strictly chronological by Date of Trade -> Time of Trade -> Fallback Timestamp
   return [...arr].sort((a, b) => {
      const execA = getExecutionValue(a);
      const execB = getExecutionValue(b);
@@ -1212,7 +1255,6 @@ function onGlobalSessionChange() {
   if (activePage === 'calendar') renderCalendar();
   if (activePage === 'trades') renderTradeList();
   if (activePage === 'breakdown') renderBreakdowns();
-  if (activePage === 'export') generateReport();
 }
 
 function toggleSessionDropdown(event) {
@@ -1359,7 +1401,7 @@ const pageMeta = {
   trades: { title: 'Trade List', sub: 'All logged backtest trades' },
   breakdown: { title: 'Breakdowns', sub: 'Performance by category' },
   ai: { title: 'AI Coach', sub: 'Get personalized analysis and improvements' },
-  export: { title: 'Export Report', sub: 'Generate a shareable comprehensive analysis prompt' },
+  export: { title: 'Export Report', sub: 'Generate a shareable analysis prompt' },
   settings: { title: 'Settings', sub: 'API key, data management' },
 };
 
@@ -1397,6 +1439,10 @@ function resetForm() {
   selectedConviction = null;
   selectedProcess = null;
   screenshotList = [];
+  entryScaled = false;
+  exitScaled = false;
+  entryFills = [];
+  exitFills = [];
   document.getElementById('form-mode-label').textContent = 'New Trade';
   
   document.getElementById('f-bt-session').value = settings.lastBtSession || 'Default Session';
@@ -1409,6 +1455,8 @@ function resetForm() {
   document.getElementById('f-sl-points').value = '';
   document.getElementById('f-tp-points').value = '';
   document.getElementById('f-contracts').value = settings.defaultContracts || 1;
+  renderFills('entry');
+  renderFills('exit');
   document.getElementById('f-entry-time').value = '';
   document.getElementById('f-exit-time').value = '';
   document.getElementById('f-session-display').value = '';
@@ -1451,18 +1499,132 @@ function setProcess(r) {
   document.getElementById(id)?.addEventListener('input', updateCalc);
 });
 
+// ─── SCALED ENTRY / EXIT FILLS ──────────────────────────────────────────────────
+function toggleScaled(side) {
+  const isScaled = side === 'entry' ? entryScaled : exitScaled;
+  if (isScaled) {
+    const fills = side === 'entry' ? entryFills : exitFills;
+    const hasData = fills.some(f => f.price !== '' || f.qty !== '');
+    if (hasData && !confirm('Cancel scaling and clear these fills?')) return;
+    if (side === 'entry') { entryScaled = false; entryFills = []; } else { exitScaled = false; exitFills = []; }
+  } else {
+    if (side === 'entry') { entryScaled = true; entryFills = [{ price: '', qty: '' }, { price: '', qty: '' }]; }
+    else { exitScaled = true; exitFills = [{ price: '', qty: '' }, { price: '', qty: '' }]; }
+  }
+  renderFills(side);
+  updateCalc();
+}
+
+function addFillRow(side) {
+  (side === 'entry' ? entryFills : exitFills).push({ price: '', qty: '' });
+  renderFills(side);
+}
+
+function removeFillRow(side, idx) {
+  const fills = side === 'entry' ? entryFills : exitFills;
+  fills.splice(idx, 1);
+  renderFills(side);
+  updateCalc();
+}
+
+function updateFillValue(side, idx, field, val) {
+  (side === 'entry' ? entryFills : exitFills)[idx][field] = val;
+  updateContractsFieldState();
+  updateCalc();
+}
+
+function renderFills(side) {
+  const scaled = side === 'entry' ? entryScaled : exitScaled;
+  const fills = side === 'entry' ? entryFills : exitFills;
+  const baseInput = document.getElementById('f-' + side);
+  const block = document.getElementById(side + '-fills-block');
+  const toggleBtn = document.getElementById(side + '-scale-toggle');
+
+  baseInput.style.display = scaled ? 'none' : 'block';
+  block.style.display = scaled ? 'block' : 'none';
+  toggleBtn.textContent = scaled ? '✕ Cancel Scale' : '+ Scale';
+  toggleBtn.classList.toggle('active', scaled);
+
+  document.getElementById(side + '-fills-rows').innerHTML = fills.map((f, i) => `
+    <div class="fill-row">
+      <input type="number" step="0.25" class="form-input" placeholder="Price" value="${f.price}" oninput="updateFillValue('${side}',${i},'price',this.value)">
+      <input type="number" step="1" class="form-input fill-qty" placeholder="Qty" value="${f.qty}" oninput="updateFillValue('${side}',${i},'qty',this.value)">
+      ${fills.length > 1 ? `<button type="button" class="fill-remove" onclick="removeFillRow('${side}',${i})" title="Remove fill">✕</button>` : ''}
+    </div>
+  `).join('');
+
+  updateContractsFieldState();
+}
+
+function updateContractsFieldState() {
+  const contractsInput = document.getElementById('f-contracts');
+  const label = document.getElementById('contracts-label');
+  if (entryScaled) {
+    const total = entryFills.reduce((s, f) => s + (parseInt(f.qty) || 0), 0);
+    contractsInput.value = total;
+    contractsInput.readOnly = true;
+    contractsInput.style.opacity = '0.65';
+    label.textContent = 'Contracts (auto — sum of entry fills)';
+  } else {
+    contractsInput.readOnly = false;
+    contractsInput.style.opacity = '1';
+    label.textContent = 'Contracts';
+  }
+}
+
+// Computes the effective entry/exit price and total contracts, whether the trade
+// uses simple single fills or scaled entry/exit legs. Used by both the live
+// calculator preview and the actual save, so they can never disagree.
+function getEffectiveFillData() {
+  let entry, exit, contracts, error = null;
+  let entryFillsClean = null, exitFillsClean = null;
+
+  if (entryScaled) {
+    const valid = entryFills.filter(f => f.price !== '' && f.qty !== '' && !isNaN(parseFloat(f.price)) && !isNaN(parseInt(f.qty)));
+    const totalQty = valid.reduce((s, f) => s + parseInt(f.qty), 0);
+    if (!valid.length || totalQty <= 0) {
+      error = 'Enter at least one valid entry fill (price + qty).';
+    }
+    entry = totalQty > 0 ? valid.reduce((s, f) => s + parseFloat(f.price) * parseInt(f.qty), 0) / totalQty : NaN;
+    contracts = totalQty;
+    entryFillsClean = valid.map(f => ({ price: parseFloat(f.price), qty: parseInt(f.qty) }));
+  } else {
+    entry = parseFloat(document.getElementById('f-entry').value);
+    contracts = parseInt(document.getElementById('f-contracts').value) || 1;
+  }
+
+  if (exitScaled) {
+    const valid = exitFills.filter(f => f.price !== '' && f.qty !== '' && !isNaN(parseFloat(f.price)) && !isNaN(parseInt(f.qty)));
+    const totalQty = valid.reduce((s, f) => s + parseInt(f.qty), 0);
+    if (!valid.length || totalQty <= 0) {
+      error = error || 'Enter at least one valid exit fill (price + qty).';
+    } else if (!isNaN(contracts) && totalQty !== contracts) {
+      error = error || `Exit fills total ${totalQty} contracts, but entry is ${contracts}. They need to match.`;
+    }
+    exit = totalQty > 0 ? valid.reduce((s, f) => s + parseFloat(f.price) * parseInt(f.qty), 0) / totalQty : NaN;
+    exitFillsClean = valid.map(f => ({ price: parseFloat(f.price), qty: parseInt(f.qty) }));
+  } else {
+    exit = parseFloat(document.getElementById('f-exit').value);
+  }
+
+  return { entry, exit, contracts, error, entryFillsClean, exitFillsClean };
+}
+
 function updateCalc() {
   const sym = document.getElementById('f-symbol').value;
   const dir = selectedDir;
-  const entry = parseFloat(document.getElementById('f-entry').value);
-  const exit = parseFloat(document.getElementById('f-exit').value);
+  const { entry, exit, contracts, error: fillError } = getEffectiveFillData();
   const slPoints = parseFloat(document.getElementById('f-sl-points').value);
   const tpPoints = parseFloat(document.getElementById('f-tp-points').value);
   const mfeVal = parseFloat(document.getElementById('f-mfe').value);
-  const contracts = parseInt(document.getElementById('f-contracts').value) || 1;
   const entryTime = document.getElementById('f-entry-time').value;
 
   document.getElementById('f-session-display').value = getSessionFromTime(entryTime);
+
+  const entryNote = document.getElementById('entry-fills-note');
+  const exitNote = document.getElementById('exit-fills-note');
+  if (entryNote) entryNote.innerHTML = fillError ? `<span class="fill-error-note">${fillError}</span>` : (entryScaled ? `Total: ${contracts || 0} contracts, avg ${isNaN(entry) ? '—' : entry.toFixed(2)}` : '');
+  if (exitNote) exitNote.innerHTML = (exitScaled && !fillError) ? `Total: ${(exitFills.reduce((s,f)=>s+(parseInt(f.qty)||0),0))} contracts, avg ${isNaN(exit) ? '—' : exit.toFixed(2)}` : '';
 
   const pnlEl = document.getElementById('calc-pnl');
   const rEl = document.getElementById('calc-r');
@@ -1478,7 +1640,7 @@ function updateCalc() {
   targetREl.textContent = '—';
   maxREl.textContent = '—'; maxREl.style.color = '';
 
-  if (!spec) return;
+  if (!spec || fillError) return;
 
   if (entry && exit && dir) {
     const ticks = (exit - entry) / spec.tick;
@@ -1584,12 +1746,14 @@ async function saveTrade() {
   const date = document.getElementById('f-date').value;
   const symbol = document.getElementById('f-symbol').value;
   const dir = selectedDir;
-  const entry = parseFloat(document.getElementById('f-entry').value);
-  const exit = parseFloat(document.getElementById('f-exit').value);
+  const { entry, exit, contracts, error: fillError, entryFillsClean, exitFillsClean } = getEffectiveFillData();
   const slPoints = parseFloat(document.getElementById('f-sl-points').value);
   const tpPoints = parseFloat(document.getElementById('f-tp-points').value) || null;
-  const contracts = parseInt(document.getElementById('f-contracts').value) || 1;
 
+  if (fillError) {
+    toast(fillError, 'red');
+    return;
+  }
   if (!date || !dir || !entry || !exit) {
     toast('Please fill in date, direction, entry, and exit price.', 'red');
     return;
@@ -1610,6 +1774,7 @@ async function saveTrade() {
   const mfeR = (mfePoints != null && slPoints && slPoints > 0) ? mfePoints / slPoints : null;
   const durationMin = computeDuration(entryTime, exitTime);
   
+  // If the user typed a link but forgot to click "Add Link", include it automatically.
   const pendingLink = document.getElementById('f-tv-link').value.trim();
   if (pendingLink) { screenshotList.push(pendingLink); document.getElementById('f-tv-link').value = ''; renderScreenshotGallery(); }
   const finalScreenshots = [...screenshotList];
@@ -1625,6 +1790,8 @@ async function saveTrade() {
     setup: document.getElementById('f-setup').value.trim(),
     entry,
     exit,
+    entryFills: entryFillsClean,
+    exitFills: exitFillsClean,
     slPoints: slPoints || null,
     tpPoints: tpPoints,
     contracts,
@@ -1651,7 +1818,7 @@ async function saveTrade() {
   };
 
   const ok = await upsertTradeToDb(trade);
-  if (!ok) return;
+  if (!ok) return; // don't touch local state or the form if the cloud write failed
 
   if (editingId) {
     trades = trades.map(t => t.id === editingId ? trade : t);
@@ -1674,6 +1841,8 @@ async function saveTrade() {
   if (settings.autoBackup) downloadData();
 }
 
+// Local cache only — a convenience copy for downloadData()/offline viewing.
+// Supabase is the source of truth; every mutation is written there first.
 function cacheTradesLocally() { localStorage.setItem('bt_trades', JSON.stringify(trades)); }
 
 // ─── SUPABASE ROW MAPPING ───────────────────────────────────────────────────────
@@ -1688,11 +1857,13 @@ function tradeToRow(t) {
     internal_state: t.internalState, volatility: t.volatility, proximity: t.proximity,
     quartile: t.quartile, failure_mode: t.failureMode, outcome: t.outcome,
     thesis_clarity: t.thesisClarity, notes: t.notes, screenshots: t.screenshots || [],
+    entry_fills: t.entryFills || null, exit_fills: t.exitFills || null,
     timestamp: t.timestamp,
   };
 }
 
 function rowToTrade(row) {
+  // Falls back to the old single `screenshot` column for any row saved before this update.
   const screenshots = (row.screenshots && row.screenshots.length) ? row.screenshots : (row.screenshot ? [row.screenshot] : []);
   return {
     id: row.id, backtestSession: row.backtest_session, date: row.date, symbol: row.symbol,
@@ -1704,6 +1875,7 @@ function rowToTrade(row) {
     internalState: row.internal_state, volatility: row.volatility, proximity: row.proximity,
     quartile: row.quartile, failureMode: row.failure_mode, outcome: row.outcome,
     thesisClarity: row.thesis_clarity, notes: row.notes, screenshots,
+    entryFills: row.entry_fills || null, exitFills: row.exit_fills || null,
     timestamp: row.timestamp,
   };
 }
@@ -1743,6 +1915,9 @@ async function deleteAllTradesFromDb() {
 }
 
 // ─── SETTINGS SYNC ──────────────────────────────────────────────────────────────
+// Settings (breakeven threshold, default contracts, API keys, etc.) live in a
+// single Supabase row per user so they follow you across devices, the same way
+// trades do. localStorage is kept only as an offline fallback/cache.
 function settingsToRow(s) {
   return {
     default_contracts: s.defaultContracts || 1,
@@ -1775,6 +1950,7 @@ async function loadSettingsFromDb() {
     settings = rowToSettings(data);
     localStorage.setItem('bt_settings', JSON.stringify(settings));
   }
+  // If no row exists yet, keep whatever's cached in localStorage (first-run / pre-migration state).
 }
 
 async function upsertSettingsToDb() {
@@ -1907,8 +2083,8 @@ function openTrade(id) {
   
   const slPts = t.slPoints || (t.stop ? Math.abs(t.entry - t.stop) : '—');
   let mfeDisplay = '—';
-  if (t.mfePoints != null) { mfeDisplay = `${t.mfePoints} pts (${t.mfeR != null ? (t.mfeR >= 0 ? '+' : '') + t.mfeR.toFixed(2) + 'R' : '—'})`; } 
-  else if (t.mfeR != null) { mfeDisplay = `${t.mfeR >= 0 ? '+' : ''}${t.mfeR.toFixed(2)}R`; }
+  if (t.mfePoints != null) { mfeDisplay = `${t.mfePoints} pts (${t.mfeR != null ? t.mfeR.toFixed(1) + 'R' : '—'})`; } 
+  else if (t.mfeR != null) { mfeDisplay = `${t.mfeR.toFixed(1)}R`; }
 
   const psychKeys = ['thesisClarity', 'internalState', 'volatility', 'proximity', 'quartile', 'failureMode', 'outcome'];
   const psychChips = psychKeys.map(k => {
@@ -1944,11 +2120,11 @@ function openTrade(id) {
       </div>
     </div>
     <table style="width:100%;font-size:13px;margin-bottom:16px">
-      <tr><td style="color:var(--text3);padding:5px 0;width:120px">Entry</td><td style="font-family:var(--font-mono)">${t.entry} ${entryTimeDisp ? `at ${entryTimeDisp}` : ''}</td></tr>
-      <tr><td style="color:var(--text3);padding:5px 0">Exit</td><td style="font-family:var(--font-mono)">${t.exit} ${exitTimeDisp ? `at ${exitTimeDisp}` : ''}</td></tr>
+      <tr><td style="color:var(--text3);padding:5px 0;width:120px">Entry</td><td style="font-family:var(--font-mono)">${(t.entry != null ? t.entry.toFixed ? t.entry.toFixed(2) : t.entry : t.entry)} ${entryTimeDisp ? `at ${entryTimeDisp}` : ''}${(t.entryFills && t.entryFills.length) ? `<div style="font-size:11px;color:var(--text3);font-family:var(--font);margin-top:2px">avg of ${t.entryFills.map(f => `${f.qty}@${f.price}`).join(', ')}</div>` : ''}</td></tr>
+      <tr><td style="color:var(--text3);padding:5px 0">Exit</td><td style="font-family:var(--font-mono)">${(t.exit != null ? t.exit.toFixed ? t.exit.toFixed(2) : t.exit : t.exit)} ${exitTimeDisp ? `at ${exitTimeDisp}` : ''}${(t.exitFills && t.exitFills.length) ? `<div style="font-size:11px;color:var(--text3);font-family:var(--font);margin-top:2px">avg of ${t.exitFills.map(f => `${f.qty}@${f.price}`).join(', ')}</div>` : ''}</td></tr>
       <tr><td style="color:var(--text3);padding:5px 0">Stop Loss</td><td style="font-family:var(--font-mono)">${slPts} pts</td></tr>
       <tr><td style="color:var(--text3);padding:5px 0">Initial Target</td><td style="font-family:var(--font-mono)">${t.tpPoints ? t.tpPoints + ' pts' : '—'}</td></tr>
-      <tr><td style="color:var(--text3);padding:5px 0">Max Excursion (MFE)</td><td style="font-family:var(--font-mono);color:var(--blue)">${mfeDisplay}</td></tr>
+      <tr><td style="color:var(--text3);padding:5px 0">Max Excursion</td><td style="font-family:var(--font-mono)">${mfeDisplay}</td></tr>
       <tr><td style="color:var(--text3);padding:5px 0">Contracts</td><td>${t.contracts}</td></tr>
       <tr><td style="color:var(--text3);padding:5px 0">Process & Conv.</td><td>${t.processQuality||'—'} / ${t.conviction || t.discipline || '—'}</td></tr>
     </table>
@@ -1999,7 +2175,7 @@ function editTrade(id) {
 function duplicateTrade(id) {
   const t = trades.find(t => t.id === id);
   if (!t) return;
-  editingId = null;
+  editingId = null; // saving this will create a brand new trade, not overwrite the original
   nav('log');
   document.getElementById('form-mode-label').textContent = 'Duplicate Trade';
   populateFormFromTrade(t);
@@ -2015,6 +2191,13 @@ function populateFormFromTrade(t) {
   document.getElementById('f-entry').value = t.entry;
   document.getElementById('f-exit').value = t.exit;
   document.getElementById('f-contracts').value = t.contracts;
+
+  entryScaled = !!(t.entryFills && t.entryFills.length);
+  entryFills = entryScaled ? t.entryFills.map(f => ({ price: f.price, qty: f.qty })) : [];
+  exitScaled = !!(t.exitFills && t.exitFills.length);
+  exitFills = exitScaled ? t.exitFills.map(f => ({ price: f.price, qty: f.qty })) : [];
+  renderFills('entry');
+  renderFills('exit');
   
   document.getElementById('f-entry-time').value = t.entryTime || '';
   if(t.entryTime) formatSmartTime(document.getElementById('f-entry-time'));
@@ -2322,6 +2505,8 @@ function simulateAtR(trade, targetR) {
   if (mfe >= targetR) {
     achieved = targetR;
   } else if (mfe >= beMove) {
+    // Risk was already removed (stop moved to breakeven) by the time this trade
+    // reversed, so the worst case here is a scratch, not the original -1R stop.
     achieved = 0;
   } else {
     achieved = -1;
@@ -2466,6 +2651,7 @@ function renderCalendar() {
     }
   });
 
+  // Build a 7-wide cell array (nulls for blanks before/after the month), then chunk into weeks
   const cells = Array(firstDay).fill(null).concat(
     Array.from({ length: daysInMonth }, (_, i) => i + 1)
   );
@@ -2660,7 +2846,6 @@ function renderBreakdown(elId, field, label, tradeArr) {
   }).join('');
 }
 
-// ─── COMPREHENSIVE BACKTEST CONTEXT BUILDER ─────────────────────────────────────
 function buildContext() {
   const tradeArr = getFilteredTrades();
   const s = computeStats(tradeArr);
@@ -2668,7 +2853,6 @@ function buildContext() {
   
   const sorted = sortTradesDesc(tradeArr);
   
-  // Tag stats
   const allTags = tradeArr.flatMap(t => (t.setup || '').split(',').map(s => s.trim())).filter(Boolean);
   const uniqueTags = [...new Set(allTags)];
   const setupStats = uniqueTags.map(tag => {
@@ -2676,12 +2860,9 @@ function buildContext() {
     const pnl = t.reduce((sum, x) => sum + x.pnl, 0);
     const w = t.filter(x => isWin(x)).length, l = t.filter(x => isLoss(x)).length;
     const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
-    const rValues = t.filter(x => x.r != null).map(x => x.r);
-    const avgR = rValues.length ? (rValues.reduce((a,b)=>a+b, 0) / rValues.length).toFixed(2) + 'R' : 'N/A';
-    return `- ${tag}: ${t.length} trades | Win Rate: ${wr}% | Net P&L: $${pnl.toFixed(2)} | Avg R: ${avgR}`;
+    return `${tag}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)} total`;
   });
   
-  // Session stats
   const sessions = ['London', 'NY AM', 'NY Lunch', 'NY PM', 'Asia'];
   const sessStats = sessions.map(sess => {
     const t = tradeArr.filter(x => x.session === sess);
@@ -2689,44 +2870,11 @@ function buildContext() {
     const pnl = t.reduce((sum, x) => sum + x.pnl, 0);
     const w = t.filter(x => isWin(x)).length, l = t.filter(x => isLoss(x)).length;
     const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
-    return `- ${sess}: ${t.length} trades | Win Rate: ${wr}% | Net P&L: $${pnl.toFixed(2)}`;
+    return `${sess}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)} total`;
   }).filter(Boolean);
 
-  // MFE & Exit Efficiency Analytics
-  const mfeTrades = tradeArr.filter(t => t.mfeR != null || t.mfePoints != null);
-  let mfeSummary = 'No MFE data logged yet.';
-  if (mfeTrades.length > 0) {
-    const mfeRList = mfeTrades.filter(t => t.mfeR != null).map(t => t.mfeR);
-    const avgMfeR = mfeRList.length ? (mfeRList.reduce((sum, v) => sum + v, 0) / mfeRList.length).toFixed(2) : 'N/A';
-    
-    const tradesWithRealizedAndMfe = mfeTrades.filter(t => t.r != null && t.mfeR != null);
-    let avgLeftOnTableR = '0.00';
-    let givenBackWinnersCount = 0;
-    let avgCaptureRate = 'N/A';
-    
-    if (tradesWithRealizedAndMfe.length > 0) {
-      const leftArr = tradesWithRealizedAndMfe.map(t => Math.max(0, t.mfeR - t.r));
-      avgLeftOnTableR = (leftArr.reduce((a, b) => a + b, 0) / leftArr.length).toFixed(2);
-      
-      givenBackWinnersCount = tradesWithRealizedAndMfe.filter(t => t.mfeR >= 1.0 && t.r <= 0).length;
-      
-      const winningMfeTrades = tradesWithRealizedAndMfe.filter(t => t.mfeR > 0 && t.r > 0);
-      if (winningMfeTrades.length > 0) {
-        const rates = winningMfeTrades.map(t => Math.min(100, Math.max(0, (t.r / t.mfeR) * 100)));
-        avgCaptureRate = (rates.reduce((a, b) => a + b, 0) / rates.length).toFixed(1) + '%';
-      }
-    }
+  const recentNotes = sorted.slice(0, 10).filter(t => t.notes).map(t => `[${t.date} ${t.symbol} ${t.setup || 'no tag'}] ${t.notes}`);
 
-    mfeSummary = `
-- Trades with MFE logged: ${mfeTrades.length} of ${tradeArr.length} (${((mfeTrades.length / tradeArr.length) * 100).toFixed(0)}%)
-- Average Maximum Favorable Excursion (MFE Peak): +${avgMfeR}R
-- Average Realized Return across all trades: ${s.avgR != null ? (s.avgR >= 0 ? '+' : '') + s.avgR.toFixed(2) + 'R' : 'N/A'}
-- Average Potential R Left on Table per Trade (MFE R - Realized R): ~${avgLeftOnTableR}R
-- Average MFE Capture Rate on winning trades: ${avgCaptureRate}
-- Trades reaching >= +1.0R peak excursion that reversed to Breakeven or Loss: ${givenBackWinnersCount} (${tradesWithRealizedAndMfe.length ? ((givenBackWinnersCount / tradesWithRealizedAndMfe.length) * 100).toFixed(0) : 0}% of MFE trades)`;
-  }
-
-  // Time block performance
   const timedTrades = tradeArr.filter(t => t.entryTime);
   let timeBlockStats = 'No entry times logged.';
   if (timedTrades.length) {
@@ -2741,11 +2889,10 @@ function buildContext() {
       const pnl = bt.reduce((s, x) => s + x.pnl, 0);
       const w = bt.filter(x => isWin(x)).length, l = bt.filter(x => isLoss(x)).length;
       const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
-      return `- ${b.label}: ${bt.length} trades | ${wr}% WR | Net: $${pnl.toFixed(2)}`;
+      return `${b.label}: ${bt.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
     }).filter(Boolean).join('\n') || 'No entry times logged.';
   }
 
-  // Trade Duration performance
   const durTrades = tradeArr.filter(t => t.durationMin != null);
   let durationStats = 'No trade durations logged.';
   if (durTrades.length) {
@@ -2760,140 +2907,53 @@ function buildContext() {
       const pnl = bt.reduce((s, x) => s + x.pnl, 0);
       const w = bt.filter(x => isWin(x)).length, l = bt.filter(x => isLoss(x)).length;
       const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
-      return `- ${b.label}: ${bt.length} trades | ${wr}% WR | Net: $${pnl.toFixed(2)}`;
+      return `${b.label}: ${bt.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
     }).filter(Boolean).join('\n') || 'No trade durations logged.';
   }
 
-  // Process & Discipline correlation
-  const processRatings = ['A', 'B', 'C', 'D'];
-  const processStats = processRatings.map(p => {
-    const pt = tradeArr.filter(t => t.processQuality === p);
-    if (!pt.length) return null;
-    const pnl = pt.reduce((sum, x) => sum + x.pnl, 0);
-    const w = pt.filter(x => isWin(x)).length, l = pt.filter(x => isLoss(x)).length;
-    const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
-    const avgR = pt.filter(x => x.r != null).length ? (pt.filter(x => x.r != null).reduce((a, b) => a + b.r, 0) / pt.filter(x => x.r != null).length).toFixed(2) + 'R' : 'N/A';
-    return `- Grade ${p}: ${pt.length} trades | Win Rate: ${wr}% | Net: $${pnl.toFixed(2)} | Avg R: ${avgR}`;
-  }).filter(Boolean);
+  return `
+You are analyzing the backtest trading journal of a futures trader. Here are their full statistics:
 
-  // Failure Mode Breakdown
-  const failureMap = {};
-  tradeArr.forEach(t => {
-    if (t.failureMode && t.failureMode !== 'None') {
-      const fName = t.failureMode.split(' — ')[0];
-      if (!failureMap[fName]) failureMap[fName] = { count: 0, pnl: 0 };
-      failureMap[fName].count++;
-      failureMap[fName].pnl += t.pnl;
-    }
-  });
-  const failureStats = Object.keys(failureMap).map(f => {
-    const item = failureMap[f];
-    return `- ${f}: ${item.count} trades | Net P&L: $${item.pnl.toFixed(2)}`;
-  });
-
-  // ALL TRADES formatted in chronological order with complete execution, MFE, and psychology data
-  const chronoTrades = [...sorted].reverse();
-  const tradeLogEntries = chronoTrades.map((t, idx) => {
-    const dispTime = t.entryTime ? minutesToTimeLabel(timeToMinutes(t.entryTime)) : (t.entryTime || 'N/A');
-    const exitDispTime = t.exitTime ? minutesToTimeLabel(timeToMinutes(t.exitTime)) : (t.exitTime || 'N/A');
-    const dur = t.durationMin != null ? `${t.durationMin}m` : 'N/A';
-    const rDisp = t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : 'N/A';
-    
-    let mfeDisp = 'N/A';
-    let exitEfficiency = 'N/A';
-    if (t.mfePoints != null || t.mfeR != null) {
-      const mfeRVal = t.mfeR != null ? `${t.mfeR >= 0 ? '+' : ''}${t.mfeR.toFixed(2)}R` : '';
-      const mfePtsVal = t.mfePoints != null ? `${t.mfePoints} pts` : '';
-      mfeDisp = [mfeRVal, mfePtsVal ? `(${mfePtsVal})` : ''].filter(Boolean).join(' ');
-      
-      if (t.mfeR != null && t.r != null) {
-        if (t.mfeR > 0) {
-          const capturePct = Math.min(100, Math.max(0, (t.r / t.mfeR) * 100)).toFixed(0);
-          const leftR = (t.mfeR - t.r).toFixed(2);
-          exitEfficiency = `${capturePct}% captured (${leftR}R left on table)`;
-        } else if (t.r < 0) {
-          exitEfficiency = `No favorable excursion (immediate adverse move)`;
-        }
-      }
-    }
-
-    const slStr = t.slPoints ? `${t.slPoints} pts` : (t.stop ? `Stop @ ${t.stop}` : 'N/A');
-    const tpStr = t.tpPoints ? `${t.tpPoints} pts` : 'N/A';
-    const riskStr = t.riskDollar ? `$${t.riskDollar.toFixed(2)}` : 'N/A';
-    const resultCls = classifyTrade(t).toUpperCase();
-
-    const psychContext = [
-      t.thesisClarity ? `Thesis: ${t.thesisClarity.split(' — ')[0]}` : null,
-      t.internalState ? `State: ${t.internalState.split(' — ')[0]}` : null,
-      t.volatility ? `Vol: ${t.volatility.split(' — ')[0]}` : null,
-      t.proximity ? `Proximity: ${t.proximity.split(' — ')[0]}` : null,
-      t.quartile ? `Quartile: ${t.quartile.split(' — ')[0]}` : null,
-      t.failureMode ? `FailureMode: ${t.failureMode.split(' — ')[0]}` : null,
-      t.outcome ? `Outcome: ${t.outcome}` : null,
-      t.conviction ? `Conviction: ${t.conviction}/5` : null,
-      t.processQuality ? `Process: ${t.processQuality}` : null,
-    ].filter(Boolean).join(' | ');
-
-    return `TRADE #${idx + 1}:
-  Date/Time: ${t.date} (${dispTime} -> ${exitDispTime}, Dur: ${dur})
-  Session/Bias: ${t.session || 'N/A'} | HTF Bias: ${t.htfBias || 'N/A'} | Group: ${t.backtestSession || 'Default'}
-  Contract/Dir: ${t.symbol} ${t.direction} (${t.contracts || 1} contracts)
-  Setup: ${t.setup || 'None'}
-  Execution: Entry: ${t.entry} | Exit: ${t.exit} | SL: ${slStr} (Risk: ${riskStr}) | TP Target: ${tpStr}
-  Outcome: Result: ${resultCls} | P&L: $${t.pnl.toFixed(2)} | Realized R: ${rDisp}
-  Excursion & Exit: Max Favorable Excursion (MFE): ${mfeDisp} | Exit Efficiency: ${exitEfficiency}
-  Context/Discipline: ${psychContext || 'None logged'}
-  Notes: ${t.notes || 'None'}`;
-  }).join('\n\n');
-
-  return `========================================
-BACKTEST JOURNAL PERFORMANCE & EXPORT
-========================================
-
---- OVERVIEW METRICS ---
-- Total Trades: ${s.total}
+OVERVIEW
+- Total trades: ${s.total}
 - Net P&L: $${s.totalPnl.toFixed(2)}
-- Net R: ${s.netR != null ? (s.netR >= 0 ? '+' : '') + s.netR.toFixed(2) + 'R' : 'N/A'}
-- Win Rate: ${(s.winRate * 100).toFixed(1)}% (${s.wins} Wins, ${s.losses} Losses, ${s.total - s.wins - s.losses} Breakeven / Scratches)
-- Profit Factor: ${isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : '∞'}
-- Average Win: $${s.avgWin.toFixed(2)} | Average Loss: $${s.avgLoss.toFixed(2)}
-- Average Realized R per Trade: ${s.avgR != null ? (s.avgR >= 0 ? '+' : '') + s.avgR.toFixed(2) + 'R' : 'N/A'}
-- Trade Expectancy: $${s.expectancy.toFixed(2)} per trade
-- Max Drawdown: $${s.maxDD.toFixed(2)}
-- Max Win Streak: ${s.maxWinStr} | Max Loss Streak: ${s.maxLossStr}
-- Instruments Traded: ${[...new Set(tradeArr.map(t => t.symbol))].join(', ')}
+- Net R: ${s.netR != null ? s.netR.toFixed(2) + 'R' : 'N/A'}
+- Win rate: ${(s.winRate * 100).toFixed(1)}% (${s.wins} wins, ${s.losses} losses) - Excludes Breakeven trades.
+- Profit factor: ${isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : '∞'}
+- Average R: ${s.avgR != null ? s.avgR.toFixed(2) + 'R' : 'N/A'}
+- Expectancy: $${s.expectancy.toFixed(2)} per trade
+- Avg win: $${s.avgWin.toFixed(2)} | Avg loss: $${s.avgLoss.toFixed(2)}
+- Max drawdown: $${s.maxDD.toFixed(2)}
+- Best win streak: ${s.maxWinStr} | Worst loss streak: ${s.maxLossStr}
 
---- MFE & EXIT EFFECTIVENESS SUMMARY ---${mfeSummary}
+INSTRUMENTS TRADED: ${[...new Set(tradeArr.map(t => t.symbol))].join(', ')}
 
---- PERFORMANCE BY SETUP TAG ---
+PERFORMANCE BY SETUP TAG
 ${setupStats.length ? setupStats.join('\n') : 'No setup tags logged.'}
 
---- PERFORMANCE BY SESSION ---
-${sessStats.length ? sessStats.join('\n') : 'No session data.'}
+PERFORMANCE BY SESSION
+${sessStats.join('\n')}
 
---- PERFORMANCE BY HTF BIAS ---
+HTF BIAS PERFORMANCE
 ${[...new Set(tradeArr.map(t => t.htfBias).filter(Boolean))].map(b => {
     const t = tradeArr.filter(x => x.htfBias === b);
     const pnl = t.reduce((s, x) => s + x.pnl, 0);
     const w = t.filter(x => isWin(x)).length, l = t.filter(x => isLoss(x)).length;
     const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
-    return `- ${b}: ${t.length} trades | Win Rate: ${wr}% | Net: $${pnl.toFixed(2)}`;
+    return `${b}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
   }).join('\n') || 'No HTF bias data.'}
 
---- PERFORMANCE BY ENTRY TIME BLOCK ---
+PERFORMANCE BY TIME OF DAY (entry time)
 ${timeBlockStats}
 
---- PERFORMANCE BY TRADE DURATION ---
+PERFORMANCE BY TRADE DURATION
 ${durationStats}
 
---- PROCESS QUALITY CORRELATION ---
-${processStats.length ? processStats.join('\n') : 'No process ratings logged.'}
+RECENT TRADE NOTES (last 10 with notes)
+${recentNotes.length ? recentNotes.join('\n') : 'No notes logged.'}
 
---- FAILURE MODES IDENTIFIED ---
-${failureStats.length ? failureStats.join('\n') : 'No failure modes logged.'}
-
---- COMPLETE INDIVIDUAL TRADE LOG (${chronoTrades.length} TRADES) ---
-${tradeLogEntries}
+RECENT TRADES (last 20 chronological)
+${sorted.slice(0, 20).map(t => `${t.date} | ${t.symbol} | $${t.pnl.toFixed(2)} | ${t.r != null ? t.r.toFixed(2) + 'R' : 'no R'} | Process: ${t.processQuality||'?'} | Conviction: ${t.conviction||t.discipline||'?'}`).join('\n')}
 `;
 }
 
@@ -2911,14 +2971,14 @@ async function sendAI() {
   appendMsg('user', msg);
   const loadId = appendMsg('assistant', 'Analyzing your trade data…', true);
 
-  const sysPrompt = `You are a professional quantitative trading coach and senior performance analyst specializing in futures trading. ${buildContext()}\n\nBe specific, rigorous, data-driven, and actionable. Reference exact trade numbers, MFE metrics, R multiples, and failure modes directly from the data. Deliver institutional-quality coaching.`;
+  const sysPrompt = `You are a professional trading coach and data analyst specializing in futures trading. ${buildContext()} Be specific, data-driven, and actionable. Reference actual numbers from the data. Keep responses concise but insightful.`;
 
   aiHistory.push({ role: 'user', content: msg });
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 3000, system: sysPrompt, messages: aiHistory })
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, system: sysPrompt, messages: aiHistory })
     });
     const data = await res.json();
     const reply = data.content?.[0]?.text || data.error?.message || 'Error getting response.';
@@ -2958,15 +3018,7 @@ function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 
 function generateReport() {
   const ctx = buildContext();
-  const prompt = `${ctx}\n\n---\nANALYSIS REQUEST\n\nPlease analyze the above comprehensive futures backtest trading data and provide:
-1. EDGE ASSESSMENT — Is there a validated statistical edge? What is the mathematical expectancy?
-2. EXIT EFFECTIVENESS & MFE ANALYSIS — How well are exits executed relative to the maximum favorable excursion (MFE)? How much R/profit is being left on the table? Are winners being cut prematurely, or are open profits being given back due to late exits or greedy targets?
-3. TARGET OPTIMIZATION — Based on actual MFE distributions vs initial targets, what fixed or dynamic R-multiple target would maximize total expectancy?
-4. BIGGEST BLINDSPOTS & FAILURE MODES — Where is money being consistently lost (specific setups, times of day, sessions, or recurring emotional/psychological traps)?
-5. PROCESS & CONVICTION IMPACT — How does execution discipline (A/B/C/D process ratings and conviction levels) correlate with bottom-line results?
-6. TOP 3 ACTIONABLE IMPROVEMENTS — Give 3 concrete, specific, and rules-based modifications to implement immediately.
-
-Be direct, rigorous, highly analytical, and cite specific trade numbers and metrics from the log.`;
+  const prompt = `${ctx}\n\n---\nANALYSIS REQUEST\n\nPlease analyze the above futures backtest trading data and provide:\n1. EDGE ASSESSMENT — Is there a statistical edge? What's the verdict?\n2. BIGGEST BLINDSPOTS — Where is money being consistently lost?\n3. BEST SETUPS — Which conditions produce the strongest results?\n4. DISCIPLINE IMPACT — How is emotional trading affecting performance?\n5. TOP 3 IMPROVEMENTS — Specific, actionable changes to make right now.\n6. RISK MANAGEMENT — Any red flags in position sizing or drawdown?\n\nBe direct, data-driven, and reference specific numbers.`;
   document.getElementById('report-output').textContent = prompt;
 }
 
