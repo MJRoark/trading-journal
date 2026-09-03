@@ -1026,6 +1026,48 @@
       </div>
       <input type="file" id="import-file" accept=".json" style="display:none" onchange="handleImport(event)">
     </div>
+
+    <div class="card" style="max-width:720px;margin-top:20px">
+      <div class="card-header">
+        <div class="card-title">Tradovate Sync <span style="font-weight:400;color:var(--text3);font-size:12px">(Beta — connection test)</span></div>
+      </div>
+      <p style="font-size:12.5px;color:var(--text2);margin-bottom:16px;line-height:1.6">
+        This only tests whether your Tradovate account will hand back real trade data — nothing here saves or imports trades yet. Requires the API Access Add-On enabled on your Tradovate account (Tradovate → Settings → API Access), which gives you a dedicated API password, CID, and secret separate from your login password.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Environment</label>
+          <select class="form-input" id="tv-env">
+            <option value="demo">Demo</option>
+            <option value="live">Live</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" class="form-input" id="tv-username" placeholder="Your Tradovate login name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dedicated API Password</label>
+          <input type="password" class="form-input" id="tv-password" placeholder="Set this under API Access, not your login password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CID</label>
+          <input type="text" class="form-input" id="tv-cid" placeholder="e.g. 1234">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Secret</label>
+          <input type="password" class="form-input" id="tv-secret" placeholder="Generated with your API key">
+        </div>
+        <div class="form-group">
+          <label class="form-label">App ID</label>
+          <input type="text" class="form-input" id="tv-appid" placeholder="BacktestJournal">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="tv-test-btn" onclick="testTradovateConnection()">Test Connection</button>
+      </div>
+      <pre id="tv-test-output" style="display:none;margin-top:14px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;line-height:1.5;color:var(--text2);max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word"></pre>
+    </div>
   </div>
 </div>
 </div>
@@ -1926,6 +1968,12 @@ function settingsToRow(s) {
     auto_backup: !!s.autoBackup,
     claude_api_key: s.claudeApiKey || null,
     imgbb_key: s.imgbbKey || null,
+    tv_env: s.tvEnv || 'demo',
+    tv_username: s.tvUsername || null,
+    tv_password: s.tvPassword || null,
+    tv_cid: s.tvCid || null,
+    tv_secret: s.tvSecret || null,
+    tv_app_id: s.tvAppId || null,
   };
 }
 
@@ -1937,6 +1985,12 @@ function rowToSettings(row) {
     autoBackup: !!row.auto_backup,
     claudeApiKey: row.claude_api_key || '',
     imgbbKey: row.imgbb_key || '',
+    tvEnv: row.tv_env || 'demo',
+    tvUsername: row.tv_username || '',
+    tvPassword: row.tv_password || '',
+    tvCid: row.tv_cid || '',
+    tvSecret: row.tv_secret || '',
+    tvAppId: row.tv_app_id || '',
   };
 }
 
@@ -3035,6 +3089,12 @@ function loadSettings() {
   document.getElementById('breakeven-r-input').value = (settings.breakevenR != null && !isNaN(settings.breakevenR)) ? settings.breakevenR : 0.15;
   document.getElementById('be-move-r-input').value = (settings.beMoveR != null && !isNaN(settings.beMoveR)) ? settings.beMoveR : 0.5;
   document.getElementById('auto-backup-toggle').checked = settings.autoBackup || false;
+  document.getElementById('tv-env').value = settings.tvEnv || 'demo';
+  document.getElementById('tv-username').value = settings.tvUsername || '';
+  document.getElementById('tv-password').value = settings.tvPassword || '';
+  document.getElementById('tv-cid').value = settings.tvCid || '';
+  document.getElementById('tv-secret').value = settings.tvSecret || '';
+  document.getElementById('tv-appid').value = settings.tvAppId || '';
 }
 
 async function saveSettings() {
@@ -3046,6 +3106,12 @@ async function saveSettings() {
   const beMove = parseFloat(document.getElementById('be-move-r-input').value);
   settings.beMoveR = isNaN(beMove) || beMove < 0 ? 0.5 : beMove;
   settings.autoBackup = document.getElementById('auto-backup-toggle').checked;
+  settings.tvEnv = document.getElementById('tv-env').value;
+  settings.tvUsername = document.getElementById('tv-username').value.trim();
+  settings.tvPassword = document.getElementById('tv-password').value;
+  settings.tvCid = document.getElementById('tv-cid').value.trim();
+  settings.tvSecret = document.getElementById('tv-secret').value.trim();
+  settings.tvAppId = document.getElementById('tv-appid').value.trim();
 
   const ok = await upsertSettingsToDb();
   if (!ok) return;
@@ -3053,6 +3119,81 @@ async function saveSettings() {
   localStorage.setItem('bt_settings', JSON.stringify(settings));
   toast('Settings saved — synced to your account.');
   renderDashboard();
+}
+
+// ─── TRADOVATE CONNECTION TEST (read-only diagnostic — imports nothing) ─────────
+async function testTradovateConnection() {
+  const btn = document.getElementById('tv-test-btn');
+  const out = document.getElementById('tv-test-output');
+  out.style.display = 'block';
+  out.textContent = 'Connecting…';
+  btn.disabled = true;
+
+  const env = document.getElementById('tv-env').value;
+  const base = env === 'live' ? 'https://live.tradovateapi.com/v1' : 'https://demo.tradovateapi.com/v1';
+  const name = document.getElementById('tv-username').value.trim();
+  const password = document.getElementById('tv-password').value;
+  const appId = document.getElementById('tv-appid').value.trim() || 'BacktestJournal';
+  const appVersion = '1.0.0';
+  const cid = document.getElementById('tv-cid').value.trim();
+  const sec = document.getElementById('tv-secret').value.trim();
+
+  if (!name || !password || !cid || !sec) {
+    out.textContent = 'Fill in username, dedicated API password, CID, and secret first.';
+    btn.disabled = false;
+    return;
+  }
+
+  // A stable per-browser device id, reused across tests rather than randomized each time.
+  let deviceId = localStorage.getItem('bt_tv_device_id');
+  if (!deviceId) {
+    deviceId = (crypto.randomUUID ? crypto.randomUUID() : 'bt-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+    localStorage.setItem('bt_tv_device_id', deviceId);
+  }
+
+  const log = [];
+  try {
+    const authRes = await fetch(base + '/auth/accesstokenrequest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ name, password, appId, appVersion, cid, sec, deviceId })
+    });
+    const authData = await authRes.json();
+    log.push('--- AUTH RESPONSE (' + authRes.status + ') ---\n' + JSON.stringify(authData, null, 2));
+
+    if (!authData.accessToken) {
+      out.textContent = log.join('\n\n');
+      toast('Authentication failed — see details below.', 'red');
+      btn.disabled = false;
+      return;
+    }
+
+    const headers = { 'Authorization': 'Bearer ' + authData.accessToken, 'Content-Type': 'application/json', 'Accept': 'application/json' };
+
+    const accountsRes = await fetch(base + '/account/list', { headers });
+    const accountsData = await accountsRes.json();
+    log.push('--- ACCOUNT LIST (' + accountsRes.status + ') ---\n' + JSON.stringify(accountsData, null, 2));
+
+    const fillPairRes = await fetch(base + '/fillPair/list', { headers });
+    const fillPairData = await fillPairRes.json();
+    const fpCount = Array.isArray(fillPairData) ? fillPairData.length : '?';
+    log.push(`--- FILLPAIR LIST (${fillPairRes.status}, ${fpCount} item(s)) ---\n` + JSON.stringify(fillPairData, null, 2).slice(0, 4000));
+
+    const fillRes = await fetch(base + '/fill/list', { headers });
+    const fillData = await fillRes.json();
+    const fCount = Array.isArray(fillData) ? fillData.length : '?';
+    log.push(`--- FILL LIST (${fillRes.status}, ${fCount} item(s)) ---\n` + JSON.stringify(fillData, null, 2).slice(0, 4000));
+
+    out.textContent = log.join('\n\n');
+    toast(`Connected. ${fpCount} fill pair(s), ${fCount} fill(s) returned — review the output below.`);
+  } catch (e) {
+    log.push('--- REQUEST FAILED ---\n' + (e && e.message ? e.message : String(e)) +
+      '\n\nIf this says something like "Failed to fetch" with no HTTP status at all, that\'s the signature of a blocked cross-origin request (CORS) rather than a login problem — it means Tradovate\'s API is refusing the request before it even reaches their server. That tells us we need a small proxy rather than calling directly from the browser.');
+    out.textContent = log.join('\n\n');
+    toast('Connection test hit an error — see details below.', 'red');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function importData() { document.getElementById('import-file').click(); }
