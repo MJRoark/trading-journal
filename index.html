@@ -384,6 +384,12 @@
   ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 10px; }
 
   .upload-zone { border: 1px dashed var(--border2); border-radius: var(--radius-sm); padding: 16px; text-align: center; cursor: pointer; transition: all 0.15s; color: var(--text3); font-size: 12px; }
+
+  .import-review-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .import-review-table th { text-align: left; padding: 8px 8px; color: var(--text3); font-weight: 600; font-size: 10.5px; text-transform: uppercase; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .import-review-table td { padding: 8px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  .import-review-table tr.is-duplicate { opacity: 0.5; }
+  .import-review-table tr.is-duplicate td:not(:first-child) { font-style: italic; }
   .upload-zone:hover { border-color: var(--blue); color: var(--blue); }
 
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: none; align-items: center; justify-content: center; }
@@ -1029,10 +1035,23 @@
 
     <div class="card" style="max-width:720px;margin-top:20px">
       <div class="card-header">
-        <div class="card-title">Tradovate Sync <span style="font-weight:400;color:var(--text3);font-size:12px">(Beta — connection test)</span></div>
+        <div class="card-title">Import from Tradovate</div>
       </div>
       <p style="font-size:12.5px;color:var(--text2);margin-bottom:16px;line-height:1.6">
-        This only tests whether your Tradovate account will hand back real trade data — nothing here saves or imports trades yet. Requires the API Access Add-On enabled on your Tradovate account (Tradovate → Settings → API Access), which gives you a dedicated API password, CID, and secret separate from your login password.
+        Export your <strong>Position History</strong> report from Tradovate (account name → gear icon → Reports → Position History → Download Report) and upload it here. Nothing is saved automatically — you'll get a chance to review and check off exactly which trades to bring in before anything's added, and new trades are always logged under "Default Session" for you to re-sort afterward.
+      </p>
+      <div class="upload-zone" id="tv-csv-upload-zone" onclick="document.getElementById('tv-csv-file').click()">
+        📄 Click to select your Position History CSV
+      </div>
+      <input type="file" id="tv-csv-file" accept=".csv" style="display:none" onchange="handleTradovateCsvImport(event)">
+    </div>
+
+    <div class="card" style="max-width:720px;margin-top:20px">
+      <div class="card-header">
+        <div class="card-title">Tradovate Live API <span style="font-weight:400;color:var(--text3);font-size:12px">(only if you have API Access — most prop/demo accounts don't qualify)</span></div>
+      </div>
+      <p style="font-size:12.5px;color:var(--text2);margin-bottom:16px;line-height:1.6">
+        Tradovate's direct API requires a live account funded to $1,000+ plus a paid API Access subscription — most eval and prop firm accounts don't qualify. This test tool is here in case that ever changes for you; it only checks whether a connection works and imports nothing on its own.
       </p>
       <div class="form-grid">
         <div class="form-group">
@@ -2202,6 +2221,7 @@ function openTrade(id) {
 function closeModal(event) {
   if (!event || event.target === document.getElementById('modal-overlay')) {
     document.getElementById('modal-overlay').classList.remove('open');
+    document.getElementById('modal-content').style.width = '';
   }
 }
 
@@ -3194,6 +3214,260 @@ async function testTradovateConnection() {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ─── TRADOVATE CSV IMPORT ────────────────────────────────────────────────────────
+function parseCsvText(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; } }
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.length > 1 || (r.length === 1 && r[0].trim() !== ''));
+}
+
+function csvRowsToObjects(rows) {
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = (r[i] !== undefined ? r[i].trim() : ''));
+    return obj;
+  });
+}
+
+function parseTvTimestamp(str) {
+  const m = String(str).match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, mo, d, y, h, mi] = m;
+  return {
+    date: `${y}-${mo}-${d}`,
+    h: parseInt(h), m: parseInt(mi),
+    sortKey: new Date(`${y}-${mo}-${d}T${String(h).padStart(2, '0')}:${mi}:00`).getTime(),
+  };
+}
+
+function fmtTvTimeStr(h, m) {
+  const displayH = h % 12 || 12;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  return `${displayH}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// Groups paired buy/sell legs from a Position History export into round-trip trades.
+// Grouped by Position ID *and* inferred direction, since a single position can
+// legitimately contain both short-side and long-side pairs if it crossed flat
+// mid-stream — this keeps those cases from being mislabeled as one trade.
+function reconstructTradovatePositions(objRows) {
+  const groups = {};
+  objRows.forEach(r => {
+    const boughtTs = parseTvTimestamp(r['Bought Timestamp']);
+    const soldTs = parseTvTimestamp(r['Sold Timestamp']);
+    const buyPrice = parseFloat(r['Buy Price']);
+    const sellPrice = parseFloat(r['Sell Price']);
+    const qty = parseInt(r['Paired Qty']);
+    if (!boughtTs || !soldTs || isNaN(buyPrice) || isNaN(sellPrice) || !qty) return;
+
+    const direction = boughtTs.sortKey <= soldTs.sortKey ? 'Long' : 'Short';
+    const key = r['Position ID'] + '_' + direction;
+    if (!groups[key]) groups[key] = { positionId: r['Position ID'], direction, symbol: r['Product'], rows: [] };
+    groups[key].rows.push({ buyPrice, sellPrice, qty, boughtTs, soldTs, pnl: parseFloat(r['P/L']) || 0 });
+  });
+
+  const candidates = [];
+  Object.values(groups).forEach(g => {
+    const buyLegs = g.rows.map(x => ({ price: x.buyPrice, qty: x.qty, ts: x.boughtTs }));
+    const sellLegs = g.rows.map(x => ({ price: x.sellPrice, qty: x.qty, ts: x.soldTs }));
+    const entryLegs = g.direction === 'Long' ? buyLegs : sellLegs;
+    const exitLegs = g.direction === 'Long' ? sellLegs : buyLegs;
+
+    const totalQty = entryLegs.reduce((s, l) => s + l.qty, 0);
+    if (!totalQty) return;
+    const avgEntry = entryLegs.reduce((s, l) => s + l.price * l.qty, 0) / totalQty;
+    const avgExit = exitLegs.reduce((s, l) => s + l.price * l.qty, 0) / totalQty;
+    const pnl = g.rows.reduce((s, x) => s + x.pnl, 0);
+
+    const entrySorted = entryLegs.slice().sort((a, b) => a.ts.sortKey - b.ts.sortKey);
+    const exitSorted = exitLegs.slice().sort((a, b) => a.ts.sortKey - b.ts.sortKey);
+    const firstEntryTs = entrySorted[0].ts;
+    const lastExitTs = exitSorted[exitSorted.length - 1].ts;
+
+    candidates.push({
+      tvPositionId: g.positionId,
+      date: firstEntryTs.date,
+      symbol: g.symbol,
+      direction: g.direction,
+      entry: avgEntry,
+      exit: avgExit,
+      contracts: totalQty,
+      pnl,
+      entryTime: fmtTvTimeStr(firstEntryTs.h, firstEntryTs.m),
+      exitTime: fmtTvTimeStr(lastExitTs.h, lastExitTs.m),
+      entryFills: entryLegs.length > 1 ? entryLegs.map(l => ({ price: l.price, qty: l.qty })) : null,
+      exitFills: exitLegs.length > 1 ? exitLegs.map(l => ({ price: l.price, qty: l.qty })) : null,
+      symbolSupported: !!CONTRACT[g.symbol],
+    });
+  });
+
+  candidates.sort((a, b) => a.date.localeCompare(b.date) || a.entryTime.localeCompare(b.entryTime));
+  return candidates;
+}
+
+// "Nearly precise" match against manually-logged trades: same day, symbol,
+// direction, and contract count, with entry/exit within a couple ticks of
+// each other (covers minor rounding between what you typed and the broker's
+// exact fill price).
+function findLikelyDuplicateTrade(candidate) {
+  return trades.find(t =>
+    t.date === candidate.date &&
+    (t.symbol || '').toUpperCase() === (candidate.symbol || '').toUpperCase() &&
+    t.direction === candidate.direction &&
+    Math.abs((t.contracts || 0) - candidate.contracts) < 0.001 &&
+    Math.abs((t.entry || 0) - candidate.entry) <= 0.5 &&
+    Math.abs((t.exit || 0) - candidate.exit) <= 0.5
+  );
+}
+
+let tvImportCandidates = [];
+
+function handleTradovateCsvImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const rows = parseCsvText(e.target.result);
+      if (rows.length < 2) { toast('That file looks empty.', 'red'); event.target.value = ''; return; }
+      const objRows = csvRowsToObjects(rows);
+      if (!('Position ID' in objRows[0]) || !('Buy Price' in objRows[0])) {
+        toast('This doesn\'t look like a Position History export — check Reports → Position History in Tradovate.', 'red');
+        event.target.value = '';
+        return;
+      }
+      const candidates = reconstructTradovatePositions(objRows);
+      if (!candidates.length) {
+        toast('No completed round-trip trades found in this file.', 'red');
+        event.target.value = '';
+        return;
+      }
+      tvImportCandidates = candidates.map(c => ({ ...c, dup: findLikelyDuplicateTrade(c) }));
+      renderTradovateReviewModal();
+    } catch (err) {
+      toast('Could not parse that file: ' + err.message, 'red');
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function renderTradovateReviewModal() {
+  document.getElementById('modal-content').style.width = '860px';
+  const rowsHtml = tvImportCandidates.map((c, i) => {
+    const isDup = !!c.dup;
+    const unsupported = !c.symbolSupported;
+    const uncheck = isDup || unsupported;
+    return `
+      <tr class="${isDup ? 'is-duplicate' : ''}">
+        <td><input type="checkbox" id="tv-cand-${i}" ${uncheck ? '' : 'checked'} ${unsupported ? 'disabled' : ''}></td>
+        <td>${c.date}</td>
+        <td>${c.symbol}${unsupported ? ' <span style="color:var(--red);font-size:10.5px">(unsupported symbol)</span>' : ''}</td>
+        <td>${c.direction}</td>
+        <td>${c.contracts}</td>
+        <td>${c.entry.toFixed(2)}${c.entryFills ? ' <span style="color:var(--text3)">(scaled)</span>' : ''}</td>
+        <td>${c.exit.toFixed(2)}${c.exitFills ? ' <span style="color:var(--text3)">(scaled)</span>' : ''}</td>
+        <td style="color:${c.pnl >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${c.pnl >= 0 ? '+$' : '-$'}${Math.abs(c.pnl).toFixed(2)}</td>
+        <td>${isDup ? 'Looks logged already' : 'New'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  document.getElementById('modal-content').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+      <div class="modal-title" style="margin-bottom:0">Review Tradovate Import</div>
+      <button class="btn btn-ghost" style="padding:6px 10px" onclick="closeModal()">✕</button>
+    </div>
+    <p style="font-size:12.5px;color:var(--text2);margin-bottom:14px">
+      Found ${tvImportCandidates.length} round-trip trade(s). Rows that look like duplicates of trades you've already logged are unchecked by default. New trades import under "Default Session" — re-sort them from the Trade List afterward.
+    </p>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="toggleAllTvCandidates(true)">Check all</button>
+      <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="toggleAllTvCandidates(false)">Uncheck all</button>
+    </div>
+    <div class="table-scroll" style="max-height:380px;overflow-y:auto">
+      <table class="import-review-table">
+        <thead><tr><th></th><th>Date</th><th>Symbol</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Status</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn btn-primary" onclick="confirmTradovateImport()">Import Selected</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function toggleAllTvCandidates(checked) {
+  tvImportCandidates.forEach((c, i) => {
+    if (!c.symbolSupported) return;
+    const el = document.getElementById('tv-cand-' + i);
+    if (el) el.checked = checked;
+  });
+}
+
+async function confirmTradovateImport() {
+  const selected = [];
+  tvImportCandidates.forEach((c, i) => {
+    const el = document.getElementById('tv-cand-' + i);
+    if (el && el.checked) selected.push(c);
+  });
+  if (!selected.length) { toast('Nothing selected to import.', 'red'); return; }
+
+  const newTrades = selected.map(c => ({
+    // Deterministic ID (position + direction) means re-importing an overlapping
+    // CSV export later updates the same row instead of creating a duplicate.
+    id: 'tv_' + c.tvPositionId + '_' + c.direction,
+    backtestSession: 'Default Session',
+    date: c.date,
+    symbol: c.symbol,
+    direction: c.direction,
+    session: getSessionFromTime(c.entryTime),
+    htfBias: null, setup: null,
+    entry: c.entry, exit: c.exit,
+    entryFills: c.entryFills, exitFills: c.exitFills,
+    slPoints: null, tpPoints: null,
+    contracts: c.contracts,
+    pnl: c.pnl, r: null, riskDollar: null,
+    mfePoints: null, mfeR: null,
+    entryTime: c.entryTime, exitTime: c.exitTime,
+    durationMin: computeDuration(c.entryTime, c.exitTime),
+    conviction: null, processQuality: null,
+    internalState: null, volatility: null, proximity: null, quartile: null,
+    failureMode: null, outcome: null, thesisClarity: null,
+    notes: 'Imported from Tradovate — entry, exit, and size are broker-confirmed; add your setup, ratings, and notes when ready.',
+    screenshots: [],
+    timestamp: Date.now(),
+  }));
+
+  const ok = await bulkUpsertTradesToDb(newTrades);
+  if (!ok) return;
+
+  await loadTradesFromDb();
+  updateBtSessionDropdowns();
+  updateSidebarCount();
+  closeModal();
+  renderTradeList();
+  renderDashboard();
+  toast(`Imported ${newTrades.length} trade(s) from Tradovate.`);
 }
 
 function importData() { document.getElementById('import-file').click(); }
