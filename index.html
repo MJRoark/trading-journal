@@ -3278,7 +3278,14 @@ function reconstructTradovatePositions(objRows) {
     if (!boughtTs || !soldTs || isNaN(buyPrice) || isNaN(sellPrice) || !qty) return;
 
     const direction = boughtTs.sortKey <= soldTs.sortKey ? 'Long' : 'Short';
-    const key = r['Position ID'] + '_' + direction;
+    // Tradovate reuses the same Position ID across an entire flat-to-flat session for
+    // a contract, not just for one round trip -- so Position ID alone isn't a safe
+    // trade boundary. What IS safe: rows that share the exact same entry-side fill
+    // (Buy Fill ID for a long, Sell Fill ID for a short) are genuinely one entry
+    // execution scaled across multiple exits. Rows with a different entry fill ID
+    // are a separate trade, even under the same Position ID.
+    const entryFillId = direction === 'Long' ? r['Buy Fill ID'] : r['Sell Fill ID'];
+    const key = r['Position ID'] + '_' + direction + '_' + entryFillId;
     if (!groups[key]) groups[key] = { positionId: r['Position ID'], direction, symbol: r['Product'], rows: [] };
     groups[key].rows.push({ buyPrice, sellPrice, qty, boughtTs, soldTs, pnl: parseFloat(r['P/L']) || 0 });
   });
@@ -3314,6 +3321,10 @@ function reconstructTradovatePositions(objRows) {
       exitTime: fmtTvTimeStr(lastExitTs.h, lastExitTs.m),
       entryFills: entryLegs.length > 1 ? entryLegs.map(l => ({ price: l.price, qty: l.qty })) : null,
       exitFills: exitLegs.length > 1 ? exitLegs.map(l => ({ price: l.price, qty: l.qty })) : null,
+      // Full per-leg detail (with time) for the review screen's expandable breakdown --
+      // richer than entryFills/exitFills, which only carry what actually gets saved.
+      entryLegsDetail: entrySorted.map(l => ({ price: l.price, qty: l.qty, time: fmtTvTimeStr(l.ts.h, l.ts.m) })),
+      exitLegsDetail: exitSorted.map(l => ({ price: l.price, qty: l.qty, time: fmtTvTimeStr(l.ts.h, l.ts.m) })),
       symbolSupported: !!CONTRACT[g.symbol],
     });
   });
@@ -3369,14 +3380,53 @@ function handleTradovateCsvImport(event) {
   reader.readAsText(file);
 }
 
+function tvLegListHtml(legs) {
+  if (!legs || !legs.length) return '<span style="color:var(--text3)">—</span>';
+  return legs.map(l => `<div>${l.qty} @ ${l.price.toFixed(2)} <span style="color:var(--text3)">at ${l.time}</span></div>`).join('');
+}
+
+function tvDupSummaryHtml(t) {
+  if (!t) return '';
+  return `
+    <div style="font-size:12px;line-height:1.7">
+      <div><strong>${t.symbol} ${t.direction}</strong> — ${t.date} · <span style="color:var(--text3)">${t.backtestSession || 'Default Session'}</span></div>
+      <div>Entry: ${t.entry != null ? t.entry.toFixed(2) : '—'} &nbsp; Exit: ${t.exit != null ? t.exit.toFixed(2) : '—'} &nbsp; Qty: ${t.contracts ?? '—'}</div>
+      <div>P&L: <span style="color:${(t.pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${(t.pnl || 0) >= 0 ? '+$' : '-$'}${Math.abs(t.pnl || 0).toFixed(2)}</span></div>
+      ${t.notes ? `<div style="color:var(--text3);margin-top:2px">Notes: ${t.notes}</div>` : ''}
+    </div>
+  `;
+}
+
+function toggleTvCandidateDetail(i) {
+  const row = document.getElementById('tv-detail-' + i);
+  if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+  const chevron = document.getElementById('tv-chevron-' + i);
+  if (chevron) chevron.textContent = row.style.display === 'none' ? '▸' : '▾';
+}
+
 function renderTradovateReviewModal() {
-  document.getElementById('modal-content').style.width = '860px';
+  document.getElementById('modal-content').style.width = '880px';
   const rowsHtml = tvImportCandidates.map((c, i) => {
     const isDup = !!c.dup;
     const unsupported = !c.symbolSupported;
     const uncheck = isDup || unsupported;
+    const detailHtml = `
+      <div style="display:grid;grid-template-columns:${isDup ? '1fr 1fr' : '1fr 1fr'};gap:18px">
+        <div>
+          <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Entry fill(s)</div>
+          ${tvLegListHtml(c.entryLegsDetail)}
+          <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;margin:8px 0 4px">Exit fill(s)</div>
+          ${tvLegListHtml(c.exitLegsDetail)}
+        </div>
+        ${isDup ? `<div>
+          <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Suspected match already logged</div>
+          ${tvDupSummaryHtml(c.dup)}
+        </div>` : '<div></div>'}
+      </div>
+    `;
     return `
       <tr class="${isDup ? 'is-duplicate' : ''}">
+        <td><button type="button" class="btn btn-ghost" style="padding:2px 8px;font-size:11px" id="tv-chevron-${i}" onclick="toggleTvCandidateDetail(${i})">▸</button></td>
         <td><input type="checkbox" id="tv-cand-${i}" ${uncheck ? '' : 'checked'} ${unsupported ? 'disabled' : ''}></td>
         <td>${c.date}</td>
         <td>${c.symbol}${unsupported ? ' <span style="color:var(--red);font-size:10.5px">(unsupported symbol)</span>' : ''}</td>
@@ -3387,6 +3437,10 @@ function renderTradovateReviewModal() {
         <td style="color:${c.pnl >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${c.pnl >= 0 ? '+$' : '-$'}${Math.abs(c.pnl).toFixed(2)}</td>
         <td>${isDup ? 'Looks logged already' : 'New'}</td>
       </tr>
+      <tr id="tv-detail-${i}" style="display:none;background:var(--bg)">
+        <td></td>
+        <td colspan="9" style="padding:12px 8px">${detailHtml}</td>
+      </tr>
     `;
   }).join('');
 
@@ -3396,15 +3450,15 @@ function renderTradovateReviewModal() {
       <button class="btn btn-ghost" style="padding:6px 10px" onclick="closeModal()">✕</button>
     </div>
     <p style="font-size:12.5px;color:var(--text2);margin-bottom:14px">
-      Found ${tvImportCandidates.length} round-trip trade(s). Rows that look like duplicates of trades you've already logged are unchecked by default. New trades import under "Default Session" — re-sort them from the Trade List afterward.
+      Found ${tvImportCandidates.length} round-trip trade(s). Rows that look like duplicates of trades you've already logged are unchecked by default. Click the arrow on any row to see its individual fills — or, for a suspected duplicate, compare it against the trade already in your journal. New trades import under "Default Session" — re-sort them from the Trade List afterward.
     </p>
     <div style="display:flex;gap:10px;margin-bottom:10px">
       <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="toggleAllTvCandidates(true)">Check all</button>
       <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="toggleAllTvCandidates(false)">Uncheck all</button>
     </div>
-    <div class="table-scroll" style="max-height:380px;overflow-y:auto">
+    <div class="table-scroll" style="max-height:420px;overflow-y:auto">
       <table class="import-review-table">
-        <thead><tr><th></th><th>Date</th><th>Symbol</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Status</th></tr></thead>
+        <thead><tr><th></th><th></th><th>Date</th><th>Symbol</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Status</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
