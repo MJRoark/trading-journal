@@ -538,10 +538,16 @@
         <div class="topbar-sub" id="page-sub">Your backtest performance at a glance</div>
       </div>
     </div>
-    <button class="btn btn-primary" onclick="nav('log')" style="gap:6px">
-      <span>＋</span> <span class="btn-label">Log Trade</span>
-    </button>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-ghost" onclick="document.getElementById('tv-csv-file').click()" style="gap:6px" title="Import trades from a Tradovate Position History CSV">
+        <span>⇪</span> <span class="btn-label">Import</span>
+      </button>
+      <button class="btn btn-primary" onclick="nav('log')" style="gap:6px">
+        <span>＋</span> <span class="btn-label">Log Trade</span>
+      </button>
+    </div>
   </div>
+  <input type="file" id="tv-csv-file" accept=".csv" style="display:none" onchange="handleTradovateCsvImport(event)">
 
   <div class="page active" id="page-dashboard">
     <div class="metrics-grid" id="dash-metrics"></div>
@@ -1043,7 +1049,6 @@
       <div class="upload-zone" id="tv-csv-upload-zone" onclick="document.getElementById('tv-csv-file').click()">
         📄 Click to select your Position History CSV
       </div>
-      <input type="file" id="tv-csv-file" accept=".csv" style="display:none" onchange="handleTradovateCsvImport(event)">
     </div>
 
     <div class="card" style="max-width:720px;margin-top:20px">
@@ -3405,13 +3410,16 @@ function toggleTvCandidateDetail(i) {
 }
 
 function renderTradovateReviewModal() {
-  document.getElementById('modal-content').style.width = '880px';
+  document.getElementById('modal-content').style.width = '960px';
+  const sessionOptionsHtml = (AC_OPTIONS.btSession || []).map(s => `<option value="${s.replace(/"/g, '&quot;')}">`).join('');
+
   const rowsHtml = tvImportCandidates.map((c, i) => {
     const isDup = !!c.dup;
     const unsupported = !c.symbolSupported;
     const uncheck = isDup || unsupported;
+    const defaultSession = (isDup && c.dup.backtestSession) ? c.dup.backtestSession : 'Default Session';
     const detailHtml = `
-      <div style="display:grid;grid-template-columns:${isDup ? '1fr 1fr' : '1fr 1fr'};gap:18px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
         <div>
           <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Entry fill(s)</div>
           ${tvLegListHtml(c.entryLegsDetail)}
@@ -3436,10 +3444,11 @@ function renderTradovateReviewModal() {
         <td>${c.exit.toFixed(2)}${c.exitFills ? ' <span style="color:var(--text3)">(scaled)</span>' : ''}</td>
         <td style="color:${c.pnl >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${c.pnl >= 0 ? '+$' : '-$'}${Math.abs(c.pnl).toFixed(2)}</td>
         <td>${isDup ? 'Looks logged already' : 'New'}</td>
+        <td><input type="text" class="form-input" id="tv-session-${i}" list="tv-session-datalist" value="${defaultSession.replace(/"/g, '&quot;')}" style="width:140px;padding:5px 8px;font-size:12px" ${unsupported ? 'disabled' : ''}></td>
       </tr>
       <tr id="tv-detail-${i}" style="display:none;background:var(--bg)">
         <td></td>
-        <td colspan="9" style="padding:12px 8px">${detailHtml}</td>
+        <td colspan="10" style="padding:12px 8px">${detailHtml}</td>
       </tr>
     `;
   }).join('');
@@ -3450,15 +3459,19 @@ function renderTradovateReviewModal() {
       <button class="btn btn-ghost" style="padding:6px 10px" onclick="closeModal()">✕</button>
     </div>
     <p style="font-size:12.5px;color:var(--text2);margin-bottom:14px">
-      Found ${tvImportCandidates.length} round-trip trade(s). Rows that look like duplicates of trades you've already logged are unchecked by default. Click the arrow on any row to see its individual fills — or, for a suspected duplicate, compare it against the trade already in your journal. New trades import under "Default Session" — re-sort them from the Trade List afterward.
+      Found ${tvImportCandidates.length} round-trip trade(s). Rows that look like duplicates of trades you've already logged are unchecked by default. Click the arrow on any row to see its individual fills — or, for a suspected duplicate, compare it against the trade already in your journal. Each row gets its own session assignment below, defaulting to "Default Session" (or the matched trade's session, for suspected duplicates) — edit any row individually, or set several at once with the bulk control.
     </p>
-    <div style="display:flex;gap:10px;margin-bottom:10px">
+    <datalist id="tv-session-datalist">${sessionOptionsHtml}</datalist>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
       <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="toggleAllTvCandidates(true)">Check all</button>
       <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="toggleAllTvCandidates(false)">Uncheck all</button>
+      <div style="width:1px;height:20px;background:var(--border)"></div>
+      <input type="text" class="form-input" id="tv-bulk-session" list="tv-session-datalist" placeholder="Session name…" style="width:180px;padding:5px 8px;font-size:12px">
+      <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="applyBulkSessionToChecked()">Apply to checked rows</button>
     </div>
     <div class="table-scroll" style="max-height:420px;overflow-y:auto">
       <table class="import-review-table">
-        <thead><tr><th></th><th></th><th>Date</th><th>Symbol</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Status</th></tr></thead>
+        <thead><tr><th></th><th></th><th>Date</th><th>Symbol</th><th>Dir</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Status</th><th>Session</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
@@ -3478,11 +3491,26 @@ function toggleAllTvCandidates(checked) {
   });
 }
 
+function applyBulkSessionToChecked() {
+  const val = document.getElementById('tv-bulk-session').value.trim();
+  if (!val) { toast('Type a session name first.', 'red'); return; }
+  let count = 0;
+  tvImportCandidates.forEach((c, i) => {
+    const cb = document.getElementById('tv-cand-' + i);
+    const sessionInput = document.getElementById('tv-session-' + i);
+    if (cb && cb.checked && sessionInput) { sessionInput.value = val; count++; }
+  });
+  toast(count ? `Set session for ${count} checked row(s).` : 'No checked rows to update.');
+}
+
 async function confirmTradovateImport() {
   const selected = [];
   tvImportCandidates.forEach((c, i) => {
     const el = document.getElementById('tv-cand-' + i);
-    if (el && el.checked) selected.push(c);
+    if (el && el.checked) {
+      const sessionEl = document.getElementById('tv-session-' + i);
+      selected.push({ ...c, chosenSession: (sessionEl && sessionEl.value.trim()) || 'Default Session' });
+    }
   });
   if (!selected.length) { toast('Nothing selected to import.', 'red'); return; }
 
@@ -3490,7 +3518,7 @@ async function confirmTradovateImport() {
     // Deterministic ID (position + direction) means re-importing an overlapping
     // CSV export later updates the same row instead of creating a duplicate.
     id: 'tv_' + c.tvPositionId + '_' + c.direction,
-    backtestSession: 'Default Session',
+    backtestSession: c.chosenSession,
     date: c.date,
     symbol: c.symbol,
     direction: c.direction,
