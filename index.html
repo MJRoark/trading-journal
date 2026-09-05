@@ -3291,7 +3291,7 @@ function reconstructTradovatePositions(objRows) {
     // are a separate trade, even under the same Position ID.
     const entryFillId = direction === 'Long' ? r['Buy Fill ID'] : r['Sell Fill ID'];
     const key = r['Position ID'] + '_' + direction + '_' + entryFillId;
-    if (!groups[key]) groups[key] = { positionId: r['Position ID'], direction, symbol: r['Product'], rows: [] };
+    if (!groups[key]) groups[key] = { positionId: r['Position ID'], direction, symbol: r['Product'], entryFillId, rows: [] };
     groups[key].rows.push({ buyPrice, sellPrice, qty, boughtTs, soldTs, pnl: parseFloat(r['P/L']) || 0 });
   });
 
@@ -3315,6 +3315,7 @@ function reconstructTradovatePositions(objRows) {
 
     candidates.push({
       tvPositionId: g.positionId,
+      tvEntryFillId: g.entryFillId,
       date: firstEntryTs.date,
       symbol: g.symbol,
       direction: g.direction,
@@ -3517,7 +3518,7 @@ async function confirmTradovateImport() {
   const newTrades = selected.map(c => ({
     // Deterministic ID (position + direction) means re-importing an overlapping
     // CSV export later updates the same row instead of creating a duplicate.
-    id: 'tv_' + c.tvPositionId + '_' + c.direction,
+    id: 'tv_' + c.tvPositionId + '_' + c.direction + '_' + c.tvEntryFillId,
     backtestSession: c.chosenSession,
     date: c.date,
     symbol: c.symbol,
