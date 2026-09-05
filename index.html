@@ -2952,7 +2952,7 @@ function buildContext() {
     return `${sess}: ${t.length} trades, ${wr}% WR, $${pnl.toFixed(2)} total`;
   }).filter(Boolean);
 
-  const recentNotes = sorted.slice(0, 10).filter(t => t.notes).map(t => `[${t.date} ${t.symbol} ${t.setup || 'no tag'}] ${t.notes}`);
+  const allNotes = sorted.filter(t => t.notes).map(t => `[${t.date} ${t.symbol} ${t.setup || 'no tag'}] ${t.notes}`);
 
   const timedTrades = tradeArr.filter(t => t.entryTime);
   let timeBlockStats = 'No entry times logged.';
@@ -2988,6 +2988,39 @@ function buildContext() {
       const wr = (w+l > 0) ? (w / (w+l) * 100).toFixed(1) : 0;
       return `${b.label}: ${bt.length} trades, ${wr}% WR, $${pnl.toFixed(2)}`;
     }).filter(Boolean).join('\n') || 'No trade durations logged.';
+  }
+
+  // Exit efficiency: how much of each trade's favorable move (MFE) was actually
+  // captured by the realized exit. This is the piece the AI has no way to see
+  // otherwise, since MFE is the only record of what price did after entry that
+  // isn't just "where you got out."
+  const mfeTrades = tradeArr.filter(t => t.mfeR != null && t.r != null);
+  let mfeAnalysis = 'No trades with both MFE and realized R logged yet — log Max Favorable Excursion on trades to unlock exit-efficiency analysis.';
+  if (mfeTrades.length) {
+    const avgMfeR = mfeTrades.reduce((s, t) => s + t.mfeR, 0) / mfeTrades.length;
+    const avgRealizedR = mfeTrades.reduce((s, t) => s + t.r, 0) / mfeTrades.length;
+    const avgLeftOnTable = avgMfeR - avgRealizedR;
+    const captureRate = avgMfeR > 0 ? (avgRealizedR / avgMfeR * 100) : null;
+    const winners = mfeTrades.filter(t => isWin(t));
+    const avgLeftOnTableWinners = winners.length ? (winners.reduce((s, t) => s + (t.mfeR - t.r), 0) / winners.length) : null;
+    const bigGivebacks = mfeTrades.filter(t => (t.mfeR - t.r) >= 1).length;
+    mfeAnalysis = `Trades with MFE logged: ${mfeTrades.length} of ${tradeArr.length}.
+Average MFE reached: ${avgMfeR.toFixed(2)}R | Average realized R: ${avgRealizedR.toFixed(2)}R | Average R left on the table per trade: ${avgLeftOnTable.toFixed(2)}R${captureRate != null ? ` (captured ~${captureRate.toFixed(0)}% of available favorable move on average)` : ''}.
+${avgLeftOnTableWinners != null ? `On winning trades specifically, average R left on the table after the exit: ${avgLeftOnTableWinners.toFixed(2)}R.` : ''}
+Trades that gave back 1R or more of favorable movement before exit: ${bigGivebacks}.`;
+  }
+
+  // Reuses the app's own R-Multiple Optimizer sweep so any "what should my target
+  // be" answer is grounded in the same math the user can see in the Statistics tab,
+  // not a fresh guess.
+  const rOptEligible = tradeArr.filter(t => t.r != null && t.riskDollar);
+  let rOptSummary = 'Not enough trades with stop-loss data logged yet to compute an optimal fixed-R exit target.';
+  if (rOptEligible.length >= 3) {
+    const curve = computeROptCurve(rOptEligible);
+    const optimal = curve.reduce((best, c) => c.total > best.total ? c : best, curve[0]);
+    const actualTotal = rOptEligible.reduce((s, t) => s + t.pnl, 0);
+    const diff = optimal.total - actualTotal;
+    rOptSummary = `Simulating a single fixed R-multiple exit target across ${rOptEligible.length} eligible trades (assumes the stop moves to breakeven once a trade reaches ${getBreakevenMoveR().toFixed(2)}R, matching the app's current setting): the best-performing fixed target found was ${optimal.r.toFixed(1)}R, which would have produced $${optimal.total.toFixed(2)} total versus the $${actualTotal.toFixed(2)} these same trades actually made (${diff >= 0 ? '+' : '-'}$${Math.abs(diff).toFixed(2)} difference). Treat this as a data-grounded anchor for reasoning about target placement, not a guaranteed result — it assumes a perfect exit at that target on every trade.`;
   }
 
   return `
@@ -3028,11 +3061,22 @@ ${timeBlockStats}
 PERFORMANCE BY TRADE DURATION
 ${durationStats}
 
-RECENT TRADE NOTES (last 10 with notes)
-${recentNotes.length ? recentNotes.join('\n') : 'No notes logged.'}
+EXIT EFFICIENCY (MFE ANALYSIS)
+${mfeAnalysis}
 
-RECENT TRADES (last 20 chronological)
-${sorted.slice(0, 20).map(t => `${t.date} | ${t.symbol} | $${t.pnl.toFixed(2)} | ${t.r != null ? t.r.toFixed(2) + 'R' : 'no R'} | Process: ${t.processQuality||'?'} | Conviction: ${t.conviction||t.discipline||'?'}`).join('\n')}
+R-MULTIPLE TARGET OPTIMIZER (from this app's own simulator)
+${rOptSummary}
+
+TRADE NOTES (all ${allNotes.length} trades with notes)
+${allNotes.length ? allNotes.join('\n') : 'No notes logged.'}
+
+ALL TRADES (chronological, ${sorted.length} total)
+Format: Date | Symbol Direction | Setup | Session | Entry->Exit (qty) | SL/TP/MFE in points | Realized R / MFE in R | P&L | Conviction/Process | Duration | HTF Bias | Outcome | Failure mode
+${sorted.map(t => {
+    const rStr = t.r != null ? (t.r >= 0 ? '+' : '') + t.r.toFixed(2) + 'R' : 'no R';
+    const mfeRStr = t.mfeR != null ? (t.mfeR >= 0 ? '+' : '') + t.mfeR.toFixed(2) + 'R' : 'no MFE';
+    return `${t.date} | ${t.symbol} ${t.direction || '?'} | ${t.setup || 'no tag'} | ${t.session || '—'} | ${t.entry ?? '?'} -> ${t.exit ?? '?'} (${t.contracts ?? '?'}x) | SL ${t.slPoints ?? '—'}pt / TP ${t.tpPoints ?? '—'}pt / MFE ${t.mfePoints ?? '—'}pt | ${rStr} realized, ${mfeRStr} available | $${t.pnl.toFixed(2)} | Conv ${t.conviction || t.discipline || '—'} / Proc ${t.processQuality || '—'} | ${t.durationMin != null ? t.durationMin + 'min' : '—'} | ${t.htfBias || '—'} | ${t.outcome || '—'} | ${t.failureMode || '—'}`;
+  }).join('\n')}
 `;
 }
 
